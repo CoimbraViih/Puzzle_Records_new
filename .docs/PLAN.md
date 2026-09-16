@@ -4,13 +4,22 @@ Cada fase é um incremento entregável e testável isoladamente antes de avança
 
 ## Fase 0 — Fundação
 
+**Status (2026-09-16)**: código implementado e commitado em `main`; correções de uma segunda revisão em PR aberto (`fix/fase-0-review`, #1). Faltam só ações manuais fora do código — ver checklist abaixo.
+
 **Objetivo**: ter um esqueleto de aplicação rodando em produção, com autenticação e permissões, antes de qualquer lógica de pipeline.
 
 **Entregáveis**:
-- Scaffold Next.js + TypeScript + Tailwind CSS + shadcn/ui.
-- Projeto Supabase configurado: autenticação (login), schema inicial de usuários e papéis (Operador, Aprovador/Editorial, Gestor/Admin).
-- Deploy inicial na Vercel (ambiente de staging).
-- Estrutura de fila Redis + BullMQ criada (sem jobs reais ainda), pronta para receber os workers das próximas fases.
+- [x] Scaffold Next.js (App Router) + TypeScript + Tailwind CSS v4 + shadcn/ui.
+- [x] Projeto Supabase: schema `profiles`/`audit_log` com RLS, papéis (Operador, Aprovador/Editorial, Gestor/Admin) — migration em `supabase/migrations/00000000000001_init_profiles_and_audit.sql`, ainda **não aplicada** no projeto Supabase real (ação manual pendente).
+- [x] Autenticação por e-mail/senha (`app/login`), proteção de rota por sessão e papel (`proxy.ts` — Next.js 16 renomeou `middleware.ts`), shell de dashboard com navegação condicionada ao papel (`app/dashboard`, `components/layout`).
+- [x] Estrutura de fila Redis + BullMQ criada (sem jobs reais ainda) em `/workers`, pronta para os workers das próximas fases.
+- [ ] Deploy inicial na Vercel: projeto `puzzle_records_new` já criado e linkado ao repositório GitHub; **primeiro deploy ainda não disparado** (ação manual pendente pelo dashboard da Vercel).
+
+**Pendências manuais antes de considerar a fase 100% pronta**:
+1. Aplicar a migration no projeto Supabase real e promover o primeiro usuário a `gestor` (ver instruções na Task 5 de `docs/plans/2026-09-15-fase-0-fundacao.md`).
+2. Preencher `.env.local` com credenciais reais (Supabase + Redis/Upstash) e as mesmas variáveis nas Settings do projeto Vercel.
+3. Rodar o checklist de QA manual (Task 13 do mesmo plano) contra o Supabase real.
+4. Disparar o primeiro deploy pelo dashboard da Vercel e revisar/mergear o PR #1.
 
 **Critério de pronto**: usuário consegue logar, ver um dashboard vazio, e o deploy responde em produção. Permissões por papel bloqueiam/liberam telas corretamente.
 
