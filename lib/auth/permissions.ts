@@ -13,7 +13,7 @@ const ROUTE_PERMISSIONS: RoutePermission[] = [
   { prefix: "/dashboard", roles: ["operador", "aprovador", "gestor"] },
 ];
 
-function matchesPrefix(pathname: string, prefix: string): boolean {
+export function matchesPrefix(pathname: string, prefix: string): boolean {
   // Respeita fronteiras de segmento de path: "/dashboard/kanban-interno" NÃO
   // deve casar com o prefixo "/dashboard/kanban" só porque é um prefixo de
   // string — precisa ser exatamente o prefixo ou ter "/" logo em seguida.

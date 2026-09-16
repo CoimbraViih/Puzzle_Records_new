@@ -8,10 +8,18 @@ export function Topbar({ email }: { email: string }) {
   const router = useRouter();
 
   async function handleLogout() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } catch (err) {
+      // Mesmo se o signOut falhar (ex.: offline), mandamos o usuário para
+      // /login de qualquer forma — o proxy revalida a sessão na próxima
+      // requisição, então não faz sentido prendê-lo na tela atual.
+      console.error("Topbar: signOut failed", err);
+    } finally {
+      router.push("/login");
+      router.refresh();
+    }
   }
 
   return (

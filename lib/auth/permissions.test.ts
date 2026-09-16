@@ -31,4 +31,13 @@ describe("canAccessRoute", () => {
     expect(canAccessRoute("aprovador", "/dashboard/kanban-interno")).toBe(true);
     expect(canAccessRoute("gestor", "/dashboard/kanban-interno")).toBe(true);
   });
+
+  it("não trata /dashboard/aprovacoes-interno como sub-rota de /dashboard/aprovacoes", () => {
+    // /dashboard/aprovacoes só permite aprovador/gestor; /dashboard permite todos.
+    // Um startsWith ingênuo cairia na regra de aprovações e bloquearia o operador
+    // aqui — esse caso de fato distingue o matching correto do buggy.
+    expect(canAccessRoute("operador", "/dashboard/aprovacoes-interno")).toBe(true);
+    expect(canAccessRoute("aprovador", "/dashboard/aprovacoes-interno")).toBe(true);
+    expect(canAccessRoute("gestor", "/dashboard/aprovacoes-interno")).toBe(true);
+  });
 });

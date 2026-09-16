@@ -26,14 +26,17 @@ export function LoginForm() {
 
       if (error) {
         setError("E-mail ou senha inválidos.");
+        setLoading(false);
         return;
       }
 
+      // Não resetamos `loading` no caminho de sucesso: a navegação para
+      // /dashboard está em andamento, e voltar o botão para "Entrar" antes
+      // dela terminar permite reenvio duplicado do formulário.
       router.push("/dashboard");
       router.refresh();
     } catch {
       setError("Erro ao conectar. Tente novamente ou contate o suporte.");
-    } finally {
       setLoading(false);
     }
   }
