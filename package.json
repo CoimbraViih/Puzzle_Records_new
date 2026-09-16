@@ -7,13 +7,16 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "workers": "tsx workers/index.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",
+    "bullmq": "^6.3.6",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.3.0",
+    "ioredis": "^6.0.0",
     "lucide-react": "^1.46.0",
     "next": "16.3.5",
     "radix-ui": "^1.6.7",
@@ -30,6 +33,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5",
     "vite": "^8.3.0",
     "vitest": "^5.0.1"
