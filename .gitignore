@@ -29,3 +29,6 @@ next-env.d.ts
 
 # subagent-driven-development scratch workspace
 .superpowers/
+
+# local Claude Code configuration/skills tree (must never be committed)
+.claude/

@@ -13,8 +13,15 @@ const ROUTE_PERMISSIONS: RoutePermission[] = [
   { prefix: "/dashboard", roles: ["operador", "aprovador", "gestor"] },
 ];
 
+function matchesPrefix(pathname: string, prefix: string): boolean {
+  // Respeita fronteiras de segmento de path: "/dashboard/kanban-interno" NÃO
+  // deve casar com o prefixo "/dashboard/kanban" só porque é um prefixo de
+  // string — precisa ser exatamente o prefixo ou ter "/" logo em seguida.
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
 export function canAccessRoute(role: UserRole, pathname: string): boolean {
-  const rule = ROUTE_PERMISSIONS.find((r) => pathname.startsWith(r.prefix));
+  const rule = ROUTE_PERMISSIONS.find((r) => matchesPrefix(pathname, r.prefix));
   if (!rule) return false;
   return rule.roles.includes(role);
 }

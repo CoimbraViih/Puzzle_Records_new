@@ -66,3 +66,10 @@ create policy "audit_log_gestor_read"
 create policy "audit_log_authenticated_insert"
   on public.audit_log for insert
   with check (auth.uid() = actor_id);
+
+-- backfill: usuários de auth.users criados antes desta migração não passam
+-- pelo trigger acima (que só dispara em novos inserts) e ficariam sem uma
+-- linha em public.profiles, o que faz proxy.ts tratá-los como "sem papel".
+insert into public.profiles (id, email)
+select id, email from auth.users
+on conflict (id) do nothing;

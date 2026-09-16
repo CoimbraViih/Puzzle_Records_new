@@ -24,4 +24,11 @@ describe("canAccessRoute", () => {
   it("retorna false para papel desconhecido", () => {
     expect(canAccessRoute("desconhecido" as UserRole, "/dashboard")).toBe(false);
   });
+
+  it("não trata /dashboard/kanban-interno como sub-rota de /dashboard/kanban (colisão de prefixo)", () => {
+    // Deve cair na regra menos específica "/dashboard", não na de "/dashboard/kanban".
+    expect(canAccessRoute("operador", "/dashboard/kanban-interno")).toBe(true);
+    expect(canAccessRoute("aprovador", "/dashboard/kanban-interno")).toBe(true);
+    expect(canAccessRoute("gestor", "/dashboard/kanban-interno")).toBe(true);
+  });
 });

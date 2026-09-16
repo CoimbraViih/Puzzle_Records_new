@@ -20,18 +20,22 @@ export function LoginForm() {
     setLoading(true);
     setError(null);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-    setLoading(false);
+      if (error) {
+        setError("E-mail ou senha inválidos.");
+        return;
+      }
 
-    if (error) {
-      setError("E-mail ou senha inválidos.");
-      return;
+      router.push("/dashboard");
+      router.refresh();
+    } catch {
+      setError("Erro ao conectar. Tente novamente ou contate o suporte.");
+    } finally {
+      setLoading(false);
     }
-
-    router.push("/dashboard");
-    router.refresh();
   }
 
   return (
