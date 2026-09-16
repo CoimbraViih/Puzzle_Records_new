@@ -9,6 +9,9 @@ export async function proxy(request: NextRequest) {
   // already-resolved role via "x-user-role" so app/dashboard/layout.tsx can
   // skip its own duplicate getUser()+profile fetch (Finding 5).
   const requestHeaders = new Headers(request.headers);
+  // Nunca confiar em "x-user-role" vindo do cliente: só é setado abaixo,
+  // depois de resolvido a partir do banco.
+  requestHeaders.delete("x-user-role");
 
   // Cookies refreshed by supabase-ssr during getUser()/profile calls need to
   // survive the response object being rebuilt after we know the role, so we
