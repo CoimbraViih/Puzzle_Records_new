@@ -4,7 +4,10 @@ create type public.user_role as enum ('operador', 'aprovador', 'gestor');
 
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
-  email text not null,
+  -- nullable: auth.users.email também é nullable (cadastro só por telefone,
+  -- alguns provedores OAuth, sign-in anônimo) — NOT NULL aqui faria o
+  -- trigger abaixo (e o backfill) abortar em qualquer conta assim.
+  email text,
   full_name text,
   role public.user_role not null default 'operador',
   created_at timestamptz not null default now()
@@ -31,7 +34,7 @@ create policy "profiles_gestor_full_access"
 create function public.handle_new_user()
 returns trigger
 language plpgsql
-security definer set search_path = public
+security definer set search_path = ''
 as $$
 begin
   insert into public.profiles (id, email)
@@ -40,6 +43,8 @@ begin
 end;
 $$;
 
+revoke execute on function public.handle_new_user() from public;
+
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
@@ -47,13 +52,20 @@ create trigger on_auth_user_created
 -- auditoria genérica, reaproveitada pelas próximas fases
 create table public.audit_log (
   id bigint generated always as identity primary key,
-  actor_id uuid references auth.users(id),
+  -- set null (não cascade): o registro de auditoria deve sobreviver à
+  -- exclusão do usuário que o gerou; NO ACTION (o padrão) bloquearia a
+  -- exclusão de qualquer usuário que já tenha uma linha de auditoria.
+  actor_id uuid references auth.users(id) on delete set null,
   action text not null,
   entity_type text not null,
   entity_id text,
   metadata jsonb,
   created_at timestamptz not null default now()
 );
+
+create index audit_log_actor_id_idx on public.audit_log (actor_id);
+create index audit_log_entity_idx on public.audit_log (entity_type, entity_id);
+create index audit_log_created_at_idx on public.audit_log (created_at);
 
 alter table public.audit_log enable row level security;
 

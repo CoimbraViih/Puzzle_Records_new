@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Não são código deste projeto: árvore de configuração/skills local do
+    // Claude Code e scratch workspace do subagent-driven-development.
+    ".claude/**",
+    ".superpowers/**",
   ]),
 ]);
 

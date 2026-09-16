@@ -46,25 +46,34 @@ export default async function DashboardLayout({
 
     email = user.email ?? "";
 
-    const { data: profile } = await supabase
+    const { data: profile, error } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
 
-    // Fail-closed: um usuário sem profile legível NÃO herda um papel padrão
-    // (ver Finding 2 da revisão final). Nesse caso `role` permanece
-    // `undefined` e a página exibe o estado de "perfil não configurado".
+    if (error) {
+      // Falha transitória de rede/DB é indistinguível de "sem perfil" sem
+      // isso — logamos para não virar uma indisponibilidade invisível.
+      console.error("DashboardLayout: failed to fetch profile role", error);
+    }
+
+    // Fail-closed: um usuário sem profile legível NÃO herda um papel padrão.
+    // Nesse caso `role` permanece `undefined` e a página exibe o estado de
+    // "perfil não configurado".
     role = isUserRole(profile?.role) ? profile.role : undefined;
   }
 
   if (!role) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center text-center p-6">
-        <h1 className="text-xl font-semibold">Perfil não configurado</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Contate um administrador.
-        </p>
+      <div className="flex min-h-screen flex-col">
+        <Topbar email={email} />
+        <div className="flex flex-1 flex-col items-center justify-center text-center p-6">
+          <h1 className="text-xl font-semibold">Perfil não configurado</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Contate um administrador.
+          </p>
+        </div>
       </div>
     );
   }

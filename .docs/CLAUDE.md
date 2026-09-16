@@ -6,7 +6,7 @@ Contexto completo do produto: `.docs/PRD.md`. Roadmap faseado: `.docs/PLAN.md`. 
 
 ## Estado atual
 
-Este repositório ainda não tem `git init` nem scaffold de código — é só documentação. O próximo passo de implementação é a **Fase 0** em `.docs/PLAN.md` (scaffold Next.js + Supabase + deploy inicial).
+A **Fase 0** (`.docs/PLAN.md`) está implementada e commitada em `main`: scaffold Next.js + Supabase (auth, papéis, RLS) + shell de dashboard + estrutura de fila BullMQ/Redis. Faltam apenas ações manuais fora do código (aplicar a migration no Supabase real, disparar o primeiro deploy na Vercel) — ver checklist em `.docs/PLAN.md`. Próximo passo de implementação: **Fase 1 — Ingestão**.
 
 ## Stack
 

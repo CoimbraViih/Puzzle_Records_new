@@ -7,17 +7,23 @@ export async function proxy(request: NextRequest) {
   // requestHeaders is forwarded to downstream Server Components (see
   // NextResponse.next({ request: { headers } })). We use it to pass the
   // already-resolved role via "x-user-role" so app/dashboard/layout.tsx can
-  // skip its own duplicate getUser()+profile fetch (Finding 5).
+  // skip its own duplicate getUser()+profile fetch.
   const requestHeaders = new Headers(request.headers);
   // Nunca confiar em "x-user-role" vindo do cliente: só é setado abaixo,
   // depois de resolvido a partir do banco.
   requestHeaders.delete("x-user-role");
 
-  // Cookies refreshed by supabase-ssr during getUser()/profile calls need to
-  // survive the response object being rebuilt after we know the role, so we
-  // collect them here and re-apply them on whichever response we end up
-  // returning instead of mutating a response we later discard.
-  let pendingCookies: { name: string; value: string; options?: Record<string, unknown> }[] = [];
+  // Cookies refreshed por supabase-ssr durante getUser()/a consulta de perfil
+  // precisam sobreviver à resposta final ser reconstruída depois que sabemos
+  // o papel do usuário, então acumulamos aqui (setAll pode ser chamado mais
+  // de uma vez — getUser() e a query em "profiles" cada um pode disparar um
+  // refresh de token) e reaplicamos em QUALQUER resposta que devolvermos,
+  // inclusive redirects. Aplicar só em NextResponse.next() e não nos
+  // redirects descartaria silenciosamente cookies de sessão revogados/
+  // renovados exatamente nos caminhos mais comuns (usuário sem sessão válida
+  // sendo mandado para /login, ou usuário sem permissão sendo mandado de
+  // volta para /dashboard).
+  const pendingCookies: { name: string; value: string; options?: Record<string, unknown> }[] = [];
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -31,18 +37,25 @@ export async function proxy(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          pendingCookies = cookiesToSet;
+          pendingCookies.push(...cookiesToSet);
         },
       },
     }
   );
 
-  function buildResponse(init?: Parameters<typeof NextResponse.next>[0]) {
-    const res = NextResponse.next(init ?? { request: { headers: requestHeaders } });
+  function withCookies<T extends NextResponse>(res: T): T {
     pendingCookies.forEach(({ name, value, options }) =>
       res.cookies.set(name, value, options)
     );
     return res;
+  }
+
+  function redirect(path: string) {
+    return withCookies(NextResponse.redirect(new URL(path, request.url)));
+  }
+
+  function next() {
+    return withCookies(NextResponse.next({ request: { headers: requestHeaders } }));
   }
 
   const {
@@ -50,23 +63,29 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  const isAuthRoute = pathname.startsWith("/login");
-  const isDashboardRoute = pathname.startsWith("/dashboard");
+  const isAuthRoute = pathname === "/login" || pathname.startsWith("/login/");
+  const isDashboardRoute = pathname === "/dashboard" || pathname.startsWith("/dashboard/");
 
   if (!user && isDashboardRoute) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return redirect("/login");
   }
 
   if (user && isAuthRoute) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return redirect("/dashboard");
   }
 
   if (user && isDashboardRoute) {
-    const { data: profile } = await supabase
+    const { data: profile, error } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
+
+    if (error) {
+      // Falha transitória de rede/DB é indistinguível de "sem perfil" sem
+      // isso — logamos para não virar uma indisponibilidade invisível.
+      console.error("proxy: failed to fetch profile role", error);
+    }
 
     const role = profile?.role as UserRole | undefined;
 
@@ -80,19 +99,27 @@ export async function proxy(request: NextRequest) {
     // a requisição seguir e a própria página/layout do dashboard trata o
     // estado de "perfil não configurado".
     if (pathname === "/dashboard") {
-      return buildResponse();
+      return next();
     }
 
     if (!role || !canAccessRoute(role, pathname)) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
+      return redirect("/dashboard");
     }
 
-    return buildResponse();
+    return next();
   }
 
-  return buildResponse();
+  return next();
 }
 
+// IMPORTANTE — limite de confiança de segurança: app/dashboard/layout.tsx
+// confia no header "x-user-role" setado acima em vez de sempre reconsultar o
+// banco. Isso só é seguro porque o matcher abaixo garante que TODA rota sob
+// /dashboard passa por este proxy antes de chegar ao layout. Se o matcher for
+// estreitado, ou se uma Server Function/rota nova sob /dashboard passar a
+// ficar fora dele, o header deixa de ser confiável e vira uma via de escalada
+// de privilégio. Nunca reduza a cobertura do matcher sobre /dashboard sem
+// também revisar app/dashboard/layout.tsx.
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };
