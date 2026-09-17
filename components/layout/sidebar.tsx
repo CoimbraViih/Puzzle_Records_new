@@ -6,10 +6,10 @@ import { cn } from "@/lib/utils";
 import { matchesPrefix, type UserRole } from "@/lib/auth/permissions";
 
 const NAV_ITEMS: { href: string; label: string; roles: UserRole[] }[] = [
-  { href: "/dashboard", label: "Início", roles: ["operador", "aprovador", "gestor"] },
-  { href: "/dashboard/kanban", label: "Kanban", roles: ["operador", "aprovador", "gestor"] },
-  { href: "/dashboard/aprovacoes", label: "Aprovações", roles: ["aprovador", "gestor"] },
-  { href: "/dashboard/configuracoes", label: "Configurações", roles: ["gestor"] },
+  { href: "/dashboard", label: "Início", roles: ["equipe_conteudo", "editorial", "admin"] },
+  { href: "/dashboard/kanban", label: "Kanban", roles: ["equipe_conteudo", "editorial", "admin"] },
+  { href: "/dashboard/aprovacoes", label: "Aprovações", roles: ["editorial", "admin"] },
+  { href: "/dashboard/configuracoes", label: "Configurações", roles: ["admin"] },
 ];
 
 export function Sidebar({ role }: { role: UserRole }) {
