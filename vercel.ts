@@ -4,5 +4,6 @@ export const config: VercelConfig = {
   crons: [
     { path: "/api/drive/poll", schedule: "*/5 * * * *" },
     { path: "/api/drive/renew-channel", schedule: "0 3 * * *" },
+    { path: "/api/queue/process", schedule: "*/5 * * * *" },
   ],
 };
