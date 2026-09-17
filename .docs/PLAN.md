@@ -10,7 +10,7 @@ Cada fase é um incremento entregável e testável isoladamente antes de avança
 
 **Entregáveis**:
 - [x] Scaffold Next.js (App Router) + TypeScript + Tailwind CSS v4 + shadcn/ui.
-- [x] Projeto Supabase: schema `profiles`/`audit_log` com RLS, papéis (Operador, Aprovador/Editorial, Gestor/Admin) — migration em `supabase/migrations/00000000000001_init_profiles_and_audit.sql`, ainda **não aplicada** no projeto Supabase real (ação manual pendente).
+- [x] Projeto Supabase: `profiles` **já existe em produção** (reaproveitado de uma versão anterior do produto, com RLS e papéis próprios — `equipe_conteudo`/`editorial`/`admin`; ver `lib/auth/permissions.ts`) e **não deve ser recriado**. Falta só aplicar a migration de `audit_log` em `supabase/migrations/00000000000001_add_audit_log.sql`, ainda **não aplicada** no projeto Supabase real (ação manual pendente).
 - [x] Autenticação por e-mail/senha (`app/login`), proteção de rota por sessão e papel (`proxy.ts` — Next.js 16 renomeou `middleware.ts`), shell de dashboard com navegação condicionada ao papel (`app/dashboard`, `components/layout`).
 - [x] Estrutura de fila Redis + BullMQ criada (sem jobs reais ainda) em `/workers`, pronta para os workers das próximas fases.
 - [x] Deploy inicial na Vercel: projeto `puzzle_records_new` criado e linkado ao repositório GitHub, build corrigido (conflito de peer dependency `@types/node`/`vitest` que quebrava `npm install` na Vercel) e deploy de produção **respondendo** em `https://puzzlerecordsnew.vercel.app` — build OK, porém rotas retornam 500 em runtime até as credenciais reais serem configuradas (ver pendências).
@@ -18,7 +18,7 @@ Cada fase é um incremento entregável e testável isoladamente antes de avança
 
 **Pendências manuais antes de considerar a fase 100% pronta**:
 1. Preencher `.env.local` com credenciais reais (Supabase + Redis/Upstash).
-2. Aplicar a migration no projeto Supabase real e promover o primeiro usuário a `gestor` (ver instruções na Task 1 de `docs/plans/2026-09-16-fase-0-fechamento.md`).
+2. Aplicar a migration `supabase/migrations/00000000000001_add_audit_log.sql` no projeto Supabase real (só cria `audit_log`; `profiles` já existe e não deve ser recriado — o usuário real já está com `role = 'admin'`) — ver instruções na Task 1 de `docs/plans/2026-09-16-fase-0-fechamento.md`.
 3. Configurar as mesmas 4 variáveis (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `REDIS_URL`) em Project Settings → Environment Variables no projeto Vercel e redeployar.
 4. Rodar o checklist de QA manual (Task 2 de `docs/plans/2026-09-16-fase-0-fechamento.md`) contra o Supabase real, local e em produção.
 

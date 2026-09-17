@@ -26,16 +26,38 @@ create index audit_log_created_at_idx on public.audit_log (created_at);
 
 alter table public.audit_log enable row level security;
 
--- Checagem inline (não usa is_admin() do projeto pré-existente, porque não
--- controlamos essa função nem confirmamos suas grants — o teste com a anon
--- key retornou "permission denied for function is_admin" ao consultar
--- profiles, então mantemos audit_log auto-contido).
+-- Não usamos is_admin() do projeto pré-existente, porque não controlamos
+-- essa função nem confirmamos suas grants — o teste com a anon key retornou
+-- "permission denied for function is_admin" ao consultar profiles.
+--
+-- Uma subquery direta em profiles dentro da policy abaixo ainda ficaria
+-- sujeita ao RLS de profiles (avaliado como o role authenticated que está
+-- executando), então poderia estourar o mesmo "permission denied" em
+-- runtime para um admin de verdade. Por isso a checagem é feita numa
+-- função própria SECURITY DEFINER: ela roda com o privilégio de quem a
+-- criou (dono/postgres), então a leitura de profiles lá dentro não é
+-- reavaliada sob o RLS restrito do authenticated.
+create function public.audit_log_viewer_is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
+  );
+$$;
+
+revoke execute on function public.audit_log_viewer_is_admin() from public;
+grant execute on function public.audit_log_viewer_is_admin() to authenticated;
+
 create policy "audit_log_admin_read"
   on public.audit_log for select
-  using (
-    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-  );
+  using (public.audit_log_viewer_is_admin());
 
 create policy "audit_log_authenticated_insert"
   on public.audit_log for insert
   with check (auth.uid() = actor_id);
+
+grant select, insert on public.audit_log to authenticated;
