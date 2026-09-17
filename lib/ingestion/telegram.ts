@@ -46,10 +46,20 @@ export function createTelegramBot() {
       return;
     }
 
-    const file = await ctx.api.getFile(media.fileId);
-    const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-    const fileResponse = await fetch(fileUrl);
-    const fileBytes = new Uint8Array(await fileResponse.arrayBuffer());
+    let fileBytes: Uint8Array;
+    try {
+      const file = await ctx.api.getFile(media.fileId);
+      const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+      const fileResponse = await fetch(fileUrl);
+      if (!fileResponse.ok) {
+        throw new Error(`download do arquivo do Telegram falhou com status ${fileResponse.status}`);
+      }
+      fileBytes = new Uint8Array(await fileResponse.arrayBuffer());
+    } catch (error) {
+      console.error("[telegram] falha ao baixar mídia do Telegram", error);
+      await ctx.reply("Não consegui baixar o arquivo. Tente enviar novamente.");
+      return;
+    }
 
     const extension = media.mimeType.startsWith("video") ? "mp4" : "jpg";
     const storagePath = `telegram/${media.fileUniqueId}.${extension}`;
@@ -58,8 +68,12 @@ export function createTelegramBot() {
     const { error: uploadError } = await supabase.storage
       .from("raw-media")
       .upload(storagePath, fileBytes, { contentType: media.mimeType, upsert: false });
-    // upsert: false + erro "already exists" é esperado em reentrega do Telegram — ignora silenciosamente.
-    if (uploadError && !uploadError.message.includes("already exists")) throw uploadError;
+    // upsert: false + statusCode "409" (already exists) é esperado em reentrega do Telegram — ignora silenciosamente.
+    if (uploadError && uploadError.statusCode !== "409") {
+      console.error("[telegram] falha ao subir mídia para o Supabase Storage", uploadError);
+      await ctx.reply("Não consegui salvar o arquivo. Tente enviar novamente.");
+      return;
+    }
 
     const author = ctx.from?.username ? `@${ctx.from.username}` : String(ctx.from?.id ?? "desconhecido");
 
