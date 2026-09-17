@@ -11,7 +11,9 @@ export default async function AnalyticsPage() {
   const rows = await Promise.all(
     published.map(async (item) => ({
       item,
-      analytics: item.publish_post_id ? await client.getAnalytics(item.publish_post_id) : null,
+      analytics: item.publish_post_id
+        ? await client.getAnalytics(item.publish_post_id).catch(() => null)
+        : null,
     })),
   );
 
