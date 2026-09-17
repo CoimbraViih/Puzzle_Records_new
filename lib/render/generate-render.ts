@@ -52,9 +52,12 @@ export async function processRenderJob({ pipelineItemId }: RenderJobData): Promi
     });
   } catch (err) {
     console.error(`[render] falha ao iniciar render para ${pipelineItemId}:`, err);
-    await supabase
+    const { error: errorUpdateError } = await supabase
       .from("pipeline_items")
       .update({ render_error: err instanceof Error ? err.message : String(err) })
       .eq("id", pipelineItemId);
+    if (errorUpdateError) {
+      console.error(`[render] falha ao registrar render_error para ${pipelineItemId}:`, errorUpdateError);
+    }
   }
 }
