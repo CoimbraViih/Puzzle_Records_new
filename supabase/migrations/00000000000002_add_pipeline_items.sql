@@ -34,8 +34,9 @@ alter table public.pipeline_items enable row level security;
 create function public.pipeline_items_viewer_has_role()
 returns boolean
 language sql
+stable
 security definer
-set search_path = public
+set search_path = ''
 as $$
   select exists (
     select 1 from public.profiles
@@ -50,6 +51,8 @@ grant execute on function public.pipeline_items_viewer_has_role() to authenticat
 create policy "internal roles can read pipeline_items"
   on public.pipeline_items for select
   using (public.pipeline_items_viewer_has_role());
+
+grant select on public.pipeline_items to authenticated;
 
 -- Sem policies de insert/update: só service_role (webhooks) grava, bypassando RLS.
 
