@@ -32,3 +32,6 @@ next-env.d.ts
 
 # local Claude Code configuration/skills tree (must never be committed)
 .claude/
+
+# Supabase CLI local cache
+supabase/.temp/
