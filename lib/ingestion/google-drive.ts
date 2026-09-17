@@ -5,13 +5,14 @@ import { upsertPipelineItem } from "./pipeline-items";
 type DriveChange = {
   fileId?: string | null;
   removed?: boolean | null;
-  file?: Pick<drive_v3.Schema$File, "id" | "parents" | "trashed"> | null;
+  file?: Pick<drive_v3.Schema$File, "id" | "parents" | "trashed" | "mimeType"> | null;
 };
 
 export function isRelevantDriveChange(change: DriveChange, watchedFolderId: string): boolean {
   if (change.removed) return false;
   const file = change.file;
   if (!file || file.trashed) return false;
+  if (!file.mimeType || !(file.mimeType.startsWith("image/") || file.mimeType.startsWith("video/"))) return false;
   return (file.parents ?? []).includes(watchedFolderId);
 }
 
@@ -80,7 +81,8 @@ export async function syncDriveChanges() {
       pageToken: nextPageToken,
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
-      fields: "nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,parents,trashed,mimeType,owners))",
+      fields:
+        "nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,parents,trashed,mimeType,owners,lastModifyingUser(displayName,emailAddress)))",
     });
 
     for (const change of res.data.changes ?? []) {
@@ -90,7 +92,7 @@ export async function syncDriveChanges() {
         origin: "drive",
         externalId: file.id!,
         title: file.name ?? null,
-        author: file.owners?.[0]?.emailAddress ?? null,
+        author: file.owners?.[0]?.emailAddress ?? file.lastModifyingUser?.emailAddress ?? null,
         mimeType: file.mimeType ?? null,
         driveFileId: file.id!,
         metadata: {},
@@ -139,11 +141,13 @@ export async function ensureDriveWatchChannel() {
   const res = await drive.changes.watch({
     pageToken: currentState!.page_token!,
     supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
     requestBody: {
       id: channelId,
       type: "web_hook",
       address: `${process.env.PUBLIC_BASE_URL}/api/drive/webhook`,
       token: process.env.GOOGLE_DRIVE_WEBHOOK_TOKEN,
+      params: { ttl: "86400" },
     },
   });
 

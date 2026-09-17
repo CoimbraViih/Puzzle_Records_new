@@ -37,11 +37,47 @@ function getServiceRoleClient() {
   });
 }
 
+// Allowlist de chat/user IDs do Telegram autorizados a usar o bot. Sem essa
+// checagem, qualquer pessoa que encontre o username do bot poderia empurrar
+// mídia para o pipeline (custo de Storage ilimitado + injeção de conteúdo).
+// Fail-closed: lista ausente/vazia = ninguém autorizado (não fail-open).
+let warnedMissingAllowlist = false;
+
+function getAllowedChatIds(): number[] {
+  const raw = process.env.TELEGRAM_ALLOWED_CHAT_IDS;
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .map(Number)
+    .filter((id) => Number.isFinite(id));
+}
+
+function isChatAllowed(chatId: number | undefined): boolean {
+  const allowed = getAllowedChatIds();
+  if (allowed.length === 0) {
+    if (!warnedMissingAllowlist) {
+      warnedMissingAllowlist = true;
+      console.warn(
+        "[telegram] TELEGRAM_ALLOWED_CHAT_IDS não configurado ou vazio — bloqueando todas as mensagens (fail-closed).",
+      );
+    }
+    return false;
+  }
+  return chatId !== undefined && allowed.includes(chatId);
+}
+
 export function createTelegramBot() {
   const botToken = requireEnv("TELEGRAM_BOT_TOKEN");
   const bot = new Bot(botToken);
 
   bot.on("message", async (ctx) => {
+    if (!isChatAllowed(ctx.chat?.id)) {
+      await ctx.reply("Este bot é de uso restrito.");
+      return;
+    }
+
     const media = extractMediaFromMessage(ctx.message);
     if (!media) {
       await ctx.reply("Envie uma foto ou vídeo para entrar no pipeline. Legenda opcional vira o gancho inicial.");
@@ -78,8 +114,8 @@ export function createTelegramBot() {
     const { error: uploadError } = await supabase.storage
       .from("raw-media")
       .upload(storagePath, fileBytes, { contentType: media.mimeType, upsert: false });
-    // upsert: false + statusCode "409" (already exists) é esperado em reentrega do Telegram — ignora silenciosamente.
-    if (uploadError && uploadError.statusCode !== "409") {
+    // upsert: false + status 409 / statusCode "409" (already exists) é esperado em reentrega do Telegram — ignora silenciosamente.
+    if (uploadError && uploadError.status !== 409 && uploadError.statusCode !== "409") {
       console.error("[telegram] falha ao subir mídia para o Supabase Storage", uploadError);
       await ctx.reply("Não consegui salvar o arquivo. Tente enviar novamente.");
       return;
@@ -107,5 +143,6 @@ export function getTelegramWebhookHandler() {
   const bot = createTelegramBot();
   return webhookCallback(bot, "std/http", {
     secretToken: requireEnv("TELEGRAM_WEBHOOK_SECRET"),
+    timeoutMilliseconds: 25000,
   });
 }

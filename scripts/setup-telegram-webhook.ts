@@ -3,11 +3,16 @@
 //   npx tsx scripts/setup-telegram-webhook.ts
 import "dotenv/config";
 import { Bot } from "grammy";
+import { requireEnv } from "../lib/ingestion/cron-auth";
 
 async function main() {
-  const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN!);
-  await bot.api.setWebhook(`${process.env.PUBLIC_BASE_URL}/api/telegram/webhook`, {
-    secret_token: process.env.TELEGRAM_WEBHOOK_SECRET,
+  const botToken = requireEnv("TELEGRAM_BOT_TOKEN");
+  const webhookSecret = requireEnv("TELEGRAM_WEBHOOK_SECRET");
+  const publicBaseUrl = requireEnv("PUBLIC_BASE_URL");
+
+  const bot = new Bot(botToken);
+  await bot.api.setWebhook(`${publicBaseUrl}/api/telegram/webhook`, {
+    secret_token: webhookSecret,
   });
   const info = await bot.api.getWebhookInfo();
   console.log("Webhook registrado:", info);

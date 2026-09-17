@@ -1,12 +1,22 @@
 // app/api/drive/webhook/route.ts
+import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { syncDriveChanges } from "@/lib/ingestion/google-drive";
+import { requireEnv } from "@/lib/ingestion/cron-auth";
 
 export const dynamic = "force-dynamic";
 
+function safeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
+
 export async function POST(request: NextRequest) {
   const token = request.headers.get("x-goog-channel-token");
-  if (token !== process.env.GOOGLE_DRIVE_WEBHOOK_TOKEN) {
+  const expectedToken = requireEnv("GOOGLE_DRIVE_WEBHOOK_TOKEN");
+  if (!safeCompare(token ?? "", expectedToken)) {
     return NextResponse.json({ error: "invalid channel token" }, { status: 401 });
   }
 

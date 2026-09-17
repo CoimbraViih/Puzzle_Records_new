@@ -56,6 +56,23 @@ grant select on public.pipeline_items to authenticated;
 
 -- Sem policies de insert/update: só service_role (webhooks) grava, bypassando RLS.
 
+-- updated_at tem default now() mas isso só vale no insert; sem trigger, o
+-- valor nunca seria atualizado em updates subsequentes (ficaria == created_at).
+create or replace function public.pipeline_items_set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+create trigger pipeline_items_set_updated_at
+  before update on public.pipeline_items
+  for each row
+  execute function public.pipeline_items_set_updated_at();
+
 -- drive_sync_state: linha única com estado do Watch Channel + pageToken de changes.list
 create table public.drive_sync_state (
   id boolean primary key default true check (id),
