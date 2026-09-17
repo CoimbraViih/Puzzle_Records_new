@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "workers": "tsx workers/index.ts"
+    "workers": "tsx workers/index.ts",
+    "creatomate:smoke-test": "tsx scripts/creatomate-smoke-test.ts"
   },
   "dependencies": {
     "@openrouter/sdk": "^1.2.143",
