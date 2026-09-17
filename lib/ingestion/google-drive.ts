@@ -67,7 +67,7 @@ export async function syncDriveChanges() {
 
   let pageToken = state?.page_token ?? undefined;
   if (!pageToken) {
-    const start = await drive.changes.getStartPageToken({});
+    const start = await drive.changes.getStartPageToken({ supportsAllDrives: true });
     pageToken = start.data.startPageToken!;
     await saveSyncState({ page_token: pageToken });
   }
@@ -78,6 +78,8 @@ export async function syncDriveChanges() {
   while (nextPageToken) {
     const res: { data: drive_v3.Schema$ChangeList } = await drive.changes.list({
       pageToken: nextPageToken,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
       fields: "nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,parents,trashed,mimeType,owners))",
     });
 
@@ -128,7 +130,7 @@ export async function ensureDriveWatchChannel() {
   }
 
   if (!state?.page_token) {
-    const start = await drive.changes.getStartPageToken({});
+    const start = await drive.changes.getStartPageToken({ supportsAllDrives: true });
     await saveSyncState({ page_token: start.data.startPageToken! });
   }
 
@@ -136,6 +138,7 @@ export async function ensureDriveWatchChannel() {
   const currentState = await getSyncState();
   const res = await drive.changes.watch({
     pageToken: currentState!.page_token!,
+    supportsAllDrives: true,
     requestBody: {
       id: channelId,
       type: "web_hook",

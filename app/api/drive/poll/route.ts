@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { syncDriveChanges } from "@/lib/ingestion/google-drive";
-import { isAuthorizedCronRequest } from "@/lib/ingestion/cron-auth";
+import { isAuthorizedCronRequest, requireEnv } from "@/lib/ingestion/cron-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  if (!isAuthorizedCronRequest(request.headers.get("authorization"), process.env.CRON_SECRET!)) {
+  if (!isAuthorizedCronRequest(request.headers.get("authorization"), requireEnv("CRON_SECRET"))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

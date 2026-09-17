@@ -1,6 +1,7 @@
 import { Bot, webhookCallback, type Context } from "grammy";
 import { createClient } from "@supabase/supabase-js";
 import { upsertPipelineItem } from "./pipeline-items";
+import { requireEnv } from "./cron-auth";
 
 interface ExtractedMedia {
   fileId: string;
@@ -37,7 +38,8 @@ function getServiceRoleClient() {
 }
 
 export function createTelegramBot() {
-  const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN!);
+  const botToken = requireEnv("TELEGRAM_BOT_TOKEN");
+  const bot = new Bot(botToken);
 
   bot.on("message", async (ctx) => {
     const media = extractMediaFromMessage(ctx.message);
@@ -49,14 +51,22 @@ export function createTelegramBot() {
     let fileBytes: Uint8Array;
     try {
       const file = await ctx.api.getFile(media.fileId);
-      const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+      const fileUrl = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
       const fileResponse = await fetch(fileUrl);
       if (!fileResponse.ok) {
         throw new Error(`download do arquivo do Telegram falhou com status ${fileResponse.status}`);
       }
       fileBytes = new Uint8Array(await fileResponse.arrayBuffer());
     } catch (error) {
-      console.error("[telegram] falha ao baixar mídia do Telegram", error);
+      // Nunca logar o objeto de erro cru aqui: o fetch acima embute o bot
+      // token na URL, e implementações de fetch (undici) costumam colocar a
+      // URL completa dentro de error.message/error.cause em falhas de
+      // rede/DNS/TLS — logar isso vazaria o token em texto plano nos logs.
+      const safeMessage =
+        error instanceof Error
+          ? error.message.replaceAll(botToken, "***")
+          : String(error).replaceAll(botToken, "***");
+      console.error("[telegram] falha ao baixar mídia do Telegram:", safeMessage);
       await ctx.reply("Não consegui baixar o arquivo. Tente enviar novamente.");
       return;
     }
@@ -96,6 +106,6 @@ export function createTelegramBot() {
 export function getTelegramWebhookHandler() {
   const bot = createTelegramBot();
   return webhookCallback(bot, "std/http", {
-    secretToken: process.env.TELEGRAM_WEBHOOK_SECRET,
+    secretToken: requireEnv("TELEGRAM_WEBHOOK_SECRET"),
   });
 }
