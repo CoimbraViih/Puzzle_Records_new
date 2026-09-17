@@ -1,0 +1,87 @@
+import { Bot, webhookCallback, type Context } from "grammy";
+import { createClient } from "@supabase/supabase-js";
+import { upsertPipelineItem } from "./pipeline-items";
+
+interface ExtractedMedia {
+  fileId: string;
+  fileUniqueId: string;
+  mimeType: string;
+  caption: string | null;
+}
+
+export function extractMediaFromMessage(message: Context["message"]): ExtractedMedia | null {
+  if (!message) return null;
+  const caption = "caption" in message ? message.caption ?? null : null;
+
+  if ("photo" in message && message.photo?.length) {
+    const largest = message.photo[message.photo.length - 1];
+    return { fileId: largest.file_id, fileUniqueId: largest.file_unique_id, mimeType: "image/jpeg", caption };
+  }
+
+  if ("video" in message && message.video) {
+    return {
+      fileId: message.video.file_id,
+      fileUniqueId: message.video.file_unique_id,
+      mimeType: message.video.mime_type ?? "video/mp4",
+      caption,
+    };
+  }
+
+  return null;
+}
+
+function getServiceRoleClient() {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+    auth: { persistSession: false },
+  });
+}
+
+export function createTelegramBot() {
+  const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN!);
+
+  bot.on("message", async (ctx) => {
+    const media = extractMediaFromMessage(ctx.message);
+    if (!media) {
+      await ctx.reply("Envie uma foto ou vídeo para entrar no pipeline. Legenda opcional vira o gancho inicial.");
+      return;
+    }
+
+    const file = await ctx.api.getFile(media.fileId);
+    const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+    const fileResponse = await fetch(fileUrl);
+    const fileBytes = new Uint8Array(await fileResponse.arrayBuffer());
+
+    const extension = media.mimeType.startsWith("video") ? "mp4" : "jpg";
+    const storagePath = `telegram/${media.fileUniqueId}.${extension}`;
+
+    const supabase = getServiceRoleClient();
+    const { error: uploadError } = await supabase.storage
+      .from("raw-media")
+      .upload(storagePath, fileBytes, { contentType: media.mimeType, upsert: false });
+    // upsert: false + erro "already exists" é esperado em reentrega do Telegram — ignora silenciosamente.
+    if (uploadError && !uploadError.message.includes("already exists")) throw uploadError;
+
+    const author = ctx.from?.username ? `@${ctx.from.username}` : String(ctx.from?.id ?? "desconhecido");
+
+    await upsertPipelineItem({
+      origin: "telegram",
+      externalId: media.fileUniqueId,
+      title: media.caption,
+      author,
+      mimeType: media.mimeType,
+      storagePath,
+      metadata: { chatId: ctx.chat?.id },
+    });
+
+    await ctx.reply("Recebido! Já apareceu no Kanban em 'recebido'.");
+  });
+
+  return bot;
+}
+
+export function getTelegramWebhookHandler() {
+  const bot = createTelegramBot();
+  return webhookCallback(bot, "std/http", {
+    secretToken: process.env.TELEGRAM_WEBHOOK_SECRET,
+  });
+}
