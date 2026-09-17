@@ -62,49 +62,79 @@ Cada fase é um incremento entregável e testável isoladamente antes de avança
 
 ## Fase 2 — Geração de legenda (IA)
 
-**Objetivo**: cada item recebido ganha automaticamente uma legenda/manchete gerada por IA.
+**Status (2026-09-17)**: código implementado e commitado em `worktree-fase-2-3-5-pipeline`. A lacuna arquitetural crítica identificada ao final da Fase 1 (webhooks gravando direto no Supabase, sem consumidor de fila) foi resolvida antes de começar esta fase: `workers/queues.ts` agora roda pelo padrão **cron-drain** — o cron `/api/queue/process` (`vercel.ts`, a cada 5 min) drena a fila BullMQ dentro de uma Serverless Function, em vez de depender de um worker sempre-ligado.
 
 **Entregáveis**:
-- Integração com OpenRouter (chat completions com structured output / JSON schema).
-- Prompt com instrução explícita de não inventar fatos sobre pessoas reais.
-- Job de fila que consome itens em "recebido", gera a legenda e avança o item para o status "legenda".
+- [x] Colunas de legenda/render/publicação e tabela de auditoria de eventos de sistema adicionadas via migration `supabase/migrations/00000000000003_add_caption_render_publish.sql` (ainda não aplicada no projeto real — ver pendências).
+- [x] Cliente OpenRouter (`lib/captioning/`) com chat completions em **structured output / JSON schema** (manchete + corpo), prompt com instrução explícita de não inventar fatos sobre pessoas reais.
+- [x] `JSON.parse` da resposta da OpenRouter protegido contra retorno malformado (fix pós-review).
+- [x] Processor de geração de legenda consumindo itens em "recebido" via fila, disparado automaticamente a partir da ingestão, avançando o item para "legenda".
 
-**Critério de pronto**: item processado recebe legenda estruturada (manchete + texto) e transita de status automaticamente; falhas de geração ficam visíveis (não travam a fila).
+**Pendências**:
+1. `OPENROUTER_API_KEY` real ainda não preenchida — hoje qualquer chamada real falha; só testável quando a credencial for configurada (ver checklist de QA).
+2. Migration `00000000000003` (ver Fase 5, item de pendências) ainda não aplicada no Supabase real.
+
+**Critério de pronto**: item processado recebe legenda estruturada e transita de status automaticamente; falhas de geração ficam visíveis, não travam a fila. *(Código pronto ✅; validação end-to-end com credencial real pendente — Step 3 do checklist de QA abaixo.)*
 
 ## Fase 3 — Render (Creatomate)
 
-**Objetivo**: gerar o vídeo final a partir do template visual do Creatomate.
+**Status (2026-09-17)**: código implementado e commitado. Utilitário de conversão UTC → America/Sao_Paulo criado (`lib/time/`) como base compartilhada para esta fase e a Fase 5.
 
 **Entregáveis**:
-- Template desenhado no editor visual do Creatomate seguindo a linguagem de design de referência (manchete, foto dupla, selo "AGORA/IMPACTO", card de perfil do Instagram).
-- Integração via API assíncrona do Creatomate + webhook de conclusão do render.
-- Versionamento do template com smoke test automático antes de qualquer troca de template em produção.
-- Item avança de "legenda" para "renderizando" e, ao concluir, para "vídeo pronto".
+- [x] Resolução de mídia renderizável: signed URL do Supabase Storage com fallback de download sob demanda do Drive quando necessário.
+- [x] Cliente Creatomate (`lib/rendering/creatomate-client.ts`) e builder de `modifications` configurável por env vars (`CREATOMATE_LAYER_HEADLINE`, `CREATOMATE_LAYER_PHOTO_1`, `CREATOMATE_LAYER_PHOTO_2`, `CREATOMATE_LAYER_BADGE`), evitando hardcode de nomes de camada do template.
+- [x] Processor de render (dispara job assíncrono no Creatomate), webhook de conclusão em `app/api/creatomate/webhook/route.ts`, e script de smoke test (`npm run creatomate:smoke-test`, `scripts/creatomate-smoke-test.ts`).
+- [x] Falha ao gravar `render_error` no banco agora é registrada em vez de silenciosa (fix pós-review).
+- [x] Item avança de "legenda" para "renderizando" e, ao concluir (via webhook), o Kanban passa a exibir o link de render.
 
-**Critério de pronto**: item com legenda gera vídeo correspondente automaticamente; troca de versão de template só entra em produção se o smoke test passar.
+**Pendências**:
+1. **O template do Creatomate ainda não existe** — precisa ser desenhado manualmente no editor visual (linguagem de design de referência: manchete, foto dupla, selo "AGORA/IMPACTO", card de perfil do Instagram) antes que `npm run creatomate:smoke-test` possa rodar contra a API de verdade. Sem template real, o código está implementado mas não verificado ponta a ponta.
+2. `CREATOMATE_API_KEY`/`CREATOMATE_TEMPLATE_ID`/`CREATOMATE_WEBHOOK_SECRET` ainda vazios em `.env.local`.
+
+**Critério de pronto**: item com legenda gera vídeo correspondente automaticamente; troca de versão de template só entra em produção se o smoke test passar. *(Código pronto ✅; smoke test contra template real ainda não executado — depende da pendência #1 acima.)*
 
 ## Fase 4 — Aprovação (Telegram)
 
-**Objetivo**: nenhum vídeo é publicado sem confirmação humana explícita.
+**Status (2026-09-17)**: **pulada nesta versão de teste, por decisão explícita do usuário.** O item avança direto de "renderizando" para publicação (Fase 5) sem gate de aprovação humana — ver `lib/publishing/publish-post.ts`, que já lê o item recém-renderizado e chama `getZernioClient().publish(...)` sem checar nenhum campo de aprovação.
 
-**Entregáveis**:
-- Vídeo pronto é enviado como mensagem no Telegram com inline keyboard: Aprovar / Editar legenda / Rejeitar.
-- Registro de quem aprovou/rejeitou e quando (auditoria).
-- Alerta de SLA quando um item fica tempo demais em "aguardando aprovação".
-- Item avança para "aprovado" (segue para Fase 5) ou volta/encerra em "rejeitado".
-
-**Critério de pronto**: aprovador consegue agir direto pelo Telegram, o Kanban reflete a decisão em tempo real, e o alerta de SLA dispara corretamente em itens parados.
+Isso contraria a "regra de ouro" original do produto (nenhum post vai ao ar sem aprovação humana explícita — ver `.docs/CLAUDE.md`) e **precisa ser implementada antes de qualquer uso real em produção** com conteúdo que envolva pessoas reais. Nenhum entregável desta fase (inline keyboard Aprovar/Editar/Rejeitar, auditoria de decisão, alerta de SLA) foi construído. Fica registrada como pendência explícita para uma iteração futura — ver item 1 da lista de pendências gerais no final deste arquivo.
 
 ## Fase 5 — Publicação e Dashboard
 
-**Objetivo**: fechar o ciclo com publicação automatizada e visibilidade completa da operação.
+**Status (2026-09-17)**: código implementado e commitado, cobrindo o núcleo de publicação e um MVP de dashboard (Início, Calendário, Analytics).
 
 **Entregáveis**:
-- Integração com Zernio: publicação imediata ou agendada, respeitando fila de horários e limites da plataforma.
-- Conversão de fuso horário: Zernio retorna UTC, toda a camada de calendário/agendamento exibe e calcula em America/Sao_Paulo.
-- Kanban completo (recebido → legenda → renderizando → aguardando aprovação → agendado → publicado).
-- Calendário editorial ligado ao Zernio.
-- Analytics (alcance, engajamento, melhores horários) puxados da API do Zernio.
-- Relatórios e exportação, busca e filtros no dashboard.
+- [x] Interface `ZernioClient` (`lib/publishing/zernio-client.ts`) com `MockZernioClient` funcional (`lib/publishing/mock-zernio-client.ts`, loga `[zernio:mock] publicaria...` no console e simula sucesso) e `RealZernioClient` como **stub fail-closed**: lança erro explícito em vez de adivinhar endpoints, apontando para a documentação real ainda não recebida. `getZernioClient()` escolhe a implementação real só se `ZERNIO_API_KEY` estiver preenchida.
+- [x] Processor de publicação imediata (`lib/publishing/publish-post.ts`) com error-handling robusto: grava `publish_error` em caso de falha, registra `publish_post_id`/`publish_permalink`/`published_at` em caso de sucesso, e emite evento de auditoria (`logSystemAuditEvent`) a cada transição de status.
+- [x] Kanban (`/dashboard/kanban`) agora exibe legenda, link de render, link de publicação e erros por etapa.
+- [x] Dashboard Início (`/dashboard`) com contagem de itens por status.
+- [x] Calendário editorial (`/dashboard/calendario`) e Analytics (`/dashboard/analytics`) em formato MVP, com escopo de rota corrigido e fallback para não quebrar a página inteira se um item individual falhar ao buscar analytics.
+- [ ] Conversão de fuso horário UTC → America/Sao_Paulo: utilitário criado na Fase 3 e usado no calendário/analytics.
 
-**Critério de pronto**: post aprovado é publicado/agendado corretamente no Instagram, horários exibidos batem com America/Sao_Paulo, e o dashboard mostra analytics reais vindos do Zernio.
+**Pendências**:
+1. **Publicação real no Instagram ainda não está ativa** — depende de `RealZernioClient` deixar de ser stub, o que só pode acontecer depois que o usuário fornecer a documentação real da API do Zernio (fora do escopo deste plano). Até lá, o pipeline sempre usa o mock quando `ZERNIO_API_KEY` está vazio (comportamento intencional, documentado em `.env.example`).
+2. **Relatórios/exportação e busca/filtros completos do dashboard** (item do PRD Fase 5) **ficam fora deste plano** — não implementados; pendência para uma iteração futura.
+3. A migration `supabase/migrations/00000000000003_add_caption_render_publish.sql` ainda precisa ser aplicada manualmente no Supabase Studio, junto das migrations 1 (`audit_log`) e 2 (`pipeline_items`) já pendentes desde as Fases 0/1.
+4. **Cadência de cron compartilhada com a pendência #7 da Fase 1**: o novo cron `/api/queue/process` (`*/5 * * * *`, drena a fila de legenda/render/publicação) tem exatamente o mesmo risco não verificado já registrado para `/api/drive/poll` — o plano Vercel Hobby confirmado só roda crons diários, então nenhum dos dois crons de 5 em 5 minutos tem cadência garantida até a conta ser migrada para o plano Pro (ou até isso ser testado no primeiro deploy real). Resolver os dois juntos quando a decisão de projeto/plano Vercel for tomada.
+
+**Critério de pronto**: post aprovado é publicado/agendado corretamente no Instagram, horários exibidos batem com America/Sao_Paulo, e o dashboard mostra analytics reais vindos do Zernio. *(Código e mock funcionando ✅; publicação real no Instagram, template do Creatomate e gate de aprovação continuam pendentes — ver checklist de QA abaixo.)*
+
+## Pendências gerais registradas ao fechar as Fases 2/3/5
+
+1. **Gate de aprovação (Fase 4) foi pulado por decisão do usuário** nesta versão de teste — precisa ser implementado antes de qualquer uso real em produção com pessoas reais envolvidas (ver seção Fase 4 acima).
+2. **`RealZernioClient` continua como stub** até a API real do Zernio ser documentada pelo usuário — publicação real no Instagram só ativa depois disso.
+3. **Template do Creatomate precisa ser criado manualmente** no editor visual antes que o smoke test (`npm run creatomate:smoke-test`) possa rodar contra a API de verdade.
+4. **Relatórios/exportação e busca/filtros completos do dashboard** (Fase 5 do PRD) ficam fora deste plano — pendência futura.
+5. **Migration `00000000000003_add_caption_render_publish.sql`** ainda precisa ser aplicada manualmente no Supabase Studio, junto das migrations 1 e 2 já pendentes.
+6. **Cadência de cron do plano Vercel Hobby**: `/api/queue/process` soma-se a `/api/drive/poll` (pendência #7 da Fase 1) como cron de 5 em 5 minutos sem confirmação de que o plano contratado suporta essa cadência.
+
+## Checklist de QA manual end-to-end (Task 13)
+
+Executar depois que todas as credenciais reais estiverem configuradas:
+
+1. Aplicar as 3 migrations pendentes no Supabase Studio (`audit_log`, `pipeline_items`, colunas novas desta fase — `00000000000003_add_caption_render_publish.sql`).
+2. Preencher `OPENROUTER_API_KEY` real.
+3. Criar o template no Creatomate, preencher `CREATOMATE_API_KEY`/`CREATOMATE_TEMPLATE_ID`/nomes de camada, rodar `npm run creatomate:smoke-test` e confirmar sucesso.
+4. Deixar `ZERNIO_API_KEY` **vazio** propositalmente nesta primeira rodada (usa o mock) — subir uma foto de teste pelo Telegram e acompanhar no Kanban: `recebido` → `legenda` → `renderizando` → `publicado`, checando os logs do endpoint `/api/queue/process` e o console (`[zernio:mock] publicaria...`).
+5. Confirmar no Supabase que `audit_log` recebeu uma linha para cada transição de status do item de teste.
+6. Assim que o usuário fornecer a documentação real do Zernio: implementar `RealZernioClient` (fora deste plano), preencher `ZERNIO_API_KEY`/`ZERNIO_API_BASE_URL`/`ZERNIO_INSTAGRAM_ACCOUNT_ID`, repetir o teste de ponta a ponta e confirmar que o post aparece de verdade no Instagram.
