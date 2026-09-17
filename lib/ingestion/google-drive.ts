@@ -1,6 +1,8 @@
 import { google, type drive_v3 } from "googleapis";
 import { createClient } from "@supabase/supabase-js";
 import { upsertPipelineItem } from "./pipeline-items";
+import { captionQueue } from "@/workers/queues";
+import { triggerQueueDrain } from "@/lib/queue/trigger";
 
 type DriveChange = {
   fileId?: string | null;
@@ -88,7 +90,7 @@ export async function syncDriveChanges() {
     for (const change of res.data.changes ?? []) {
       if (!isRelevantDriveChange(change, folderId)) continue;
       const file = change.file!;
-      await upsertPipelineItem({
+      const result = await upsertPipelineItem({
         origin: "drive",
         externalId: file.id!,
         title: file.name ?? null,
@@ -97,6 +99,10 @@ export async function syncDriveChanges() {
         driveFileId: file.id!,
         metadata: {},
       });
+      if (result) {
+        await captionQueue.add("caption", { pipelineItemId: result.id });
+        triggerQueueDrain();
+      }
       processed += 1;
     }
 
