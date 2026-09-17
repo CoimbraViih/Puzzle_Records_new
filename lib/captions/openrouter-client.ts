@@ -34,7 +34,13 @@ export async function requestCaptionFromOpenRouter(context: CaptionContext): Pro
     throw new Error("OpenRouter não retornou conteúdo de texto na resposta");
   }
 
-  const parsed = JSON.parse(content) as Partial<GeneratedCaption>;
+  let parsed: Partial<GeneratedCaption>;
+  try {
+    parsed = JSON.parse(content) as Partial<GeneratedCaption>;
+  } catch {
+    throw new Error("OpenRouter retornou um JSON inválido na resposta");
+  }
+
   if (!parsed.headline || !parsed.body) {
     throw new Error("Resposta da IA não contém headline/body válidos");
   }
