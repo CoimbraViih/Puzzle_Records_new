@@ -27,14 +27,30 @@ Cada fase é um incremento entregável e testável isoladamente antes de avança
 
 ## Fase 1 — Ingestão
 
+**Status (2026-09-16)**: código implementado, revisado e commitado em `main`. Entregáveis de produção concluídos: `lib/ingestion/pipeline-items.ts` + `lib/ingestion/google-drive.ts` + `lib/ingestion/telegram.ts`, webhooks configurados, Kanban board leitura acessível em `/dashboard/kanban`, 20+ testes passando. Faltam ações manuais para ficar 100% operacional: aplicar a nova migration (`00000000000002_add_pipeline_items.sql`) no Supabase real, criar o serviço Google Drive e credenciais, criar o bot Telegram via @BotFather, gerar os secrets faltantes, configurar env vars, e rodar o checklist de QA manual (Task 13).
+
+**⚠️ AVISO ARQUITETURAL — CRÍTICO PARA FASE 2**: webhooks escrevem diretamente no Supabase de forma **síncrona** — **NÃO usam a fila BullMQ** (`workers/queues.ts`) que já existe. Esta foi uma decisão explícita: Vercel Serverless Functions não conseguem manter um Worker BullMQ ativo sem infra adicional (padrão cron-drain ou host sempre-ligado), que foi adiada. **Esta lacuna DEVE ser preenchida antes da Fase 2 começar**, pois a geração de legenda genuinamente precisa de um consumidor de fila assíncrono. Fase 2 não pode prosseguir sem resolver isso primeiro.
+
 **Objetivo**: material bruto entra no sistema por dois canais e aparece no Kanban como "recebido".
 
 **Entregáveis**:
-- Integração com Google Drive API: watch (webhook) na pasta observada + polling de segurança para não perder eventos.
-- Bot do Telegram para upload rápido de material bruto.
-- Item criado no Kanban no status "recebido" para cada entrada, com metadados de origem (Drive ou Telegram) e autor.
+- [x] Integração com Google Drive API: watch (webhook) na pasta observada + polling de segurança (5 min) para não perder eventos, channel renewal automático (1x/dia) via vercel cron, implementado em `lib/ingestion/google-drive.ts` e `app/api/drive/*.ts`.
+- [x] Bot do Telegram para upload rápido de material bruto, com download automático de mídia para bucket `raw-media` do Supabase Storage, implementado em `lib/ingestion/telegram.ts` e `app/api/telegram/webhook/route.ts`.
+- [x] Tabelas Supabase: `pipeline_items` (dedup via unique(`origin`, `external_id`)) e `drive_sync_state`, migration em `supabase/migrations/00000000000002_add_pipeline_items.sql` (ainda não aplicada no projeto real).
+- [x] Item criado no Kanban no status "recebido" para cada entrada (via `upsertPipelineItem` em `lib/ingestion/pipeline-items.ts`), com metadados de origem (`drive`/`telegram`) e autor preenchidos.
+- [x] Kanban board em `/dashboard/kanban`: 6 colunas (recebido → legenda → renderizando → aguardando_aprovacao → agendado → publicado), read-only, populado de `pipeline_items`.
+- [x] Testes: 20+ testes passando, typecheck clean, build de produção válido.
 
-**Critério de pronto**: um arquivo solto na pasta do Drive ou enviado ao bot aparece no Kanban em poucos segundos, sem duplicação mesmo se o webhook falhar e o polling pegar o mesmo item.
+**Pendências manuais antes de considerar a fase 100% pronta**:
+1. Aplicar a migration `supabase/migrations/00000000000002_add_pipeline_items.sql` no projeto Supabase real (SQL Editor do Supabase Studio — sem acesso direto via CLI).
+2. **Google Drive**: criar serviço Google (via Google Cloud Console), compartilhar a pasta observada com o service account, guardar credenciais em `.env.local` e Vercel.
+3. **Telegram**: criar bot via @BotFather, obter o `TELEGRAM_BOT_TOKEN`.
+4. Gerar secrets: `GOOGLE_DRIVE_WEBHOOK_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `CRON_SECRET` (tokens aleatórios para validação).
+5. Configurar as 8 env vars novas (4 Google + 3 Telegram + 1 cron) em `.env.local` e em Project Settings → Environment Variables no projeto Vercel.
+6. Executar `scripts/setup-telegram-webhook.ts` contra o ambiente de produção (uma única vez, registra o webhook permanentemente).
+7. Rodar o checklist de QA manual (Task 13 do plano) end-to-end: um arquivo solto no Drive e uma foto/vídeo enviada ao Telegram devem aparecer no Kanban em poucos segundos, verificar dedup.
+
+**Critério de pronto**: um arquivo solto na pasta do Drive ou enviado ao bot aparece no Kanban em poucos segundos, sem duplicação mesmo se o webhook falhar e o polling pegar o mesmo item. *(Código pronto ✅; QA manual pendente — será completado em Task 13.)*
 
 ## Fase 2 — Geração de legenda (IA)
 

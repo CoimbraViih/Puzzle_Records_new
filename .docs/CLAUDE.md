@@ -6,7 +6,9 @@ Contexto completo do produto: `.docs/PRD.md`. Roadmap faseado: `.docs/PLAN.md`. 
 
 ## Estado atual
 
-A **Fase 0** (`.docs/PLAN.md`) está implementada e commitada em `main`: scaffold Next.js + Supabase (auth, papéis, RLS) + shell de dashboard + estrutura de fila BullMQ/Redis. Faltam apenas ações manuais fora do código (aplicar a migration no Supabase real, disparar o primeiro deploy na Vercel) — ver checklist em `.docs/PLAN.md`. Próximo passo de implementação: **Fase 1 — Ingestão**.
+**Fase 0** (`.docs/PLAN.md`) está implementada e commitada em `main`: scaffold Next.js + Supabase (auth, papéis, RLS) + shell de dashboard + estrutura de fila BullMQ/Redis — faltam ações manuais de setup (aplicar migration, configurar credenciais, deploy).
+
+**Fase 1** (`.docs/PLAN.md`) está implementada e commitada em `main`: ingestão via Google Drive (webhook + polling + cron renewal) e Telegram bot, com criação automática de itens no Kanban status "recebido", dedup garantido, Kanban board leitura em `/dashboard/kanban`. Faltam ações manuais de setup (aplicar migration, credenciais Drive/Telegram, gerar secrets, config env vars, QA manual). **⚠️ CRÍTICO**: webhooks escrevem direto no Supabase (sem fila BullMQ) — isso é uma decisão temporária e **DEVE ser resolvido antes de Fase 2 começar**, pois caption generation precisa de um consumidor de fila assíncrono. Próximo passo de implementação: **Fase 2 — Geração de legenda** (que exige o setup de BullMQ worker infrastructure primeiro).
 
 ## Stack
 
@@ -23,7 +25,7 @@ Next.js (App Router), React, TypeScript, Tailwind CSS, shadcn/ui, Supabase (auth
 - **OpenRouter** — geração de legenda/manchete via chat completions com **structured output (JSON schema)**, não texto livre. O prompt deve instruir explicitamente a não inventar fatos sobre pessoas reais.
 - **Telegram Bot API** — canal de upload rápido (Fase 1) e canal de aprovação com inline keyboard Aprovar/Editar/Rejeitar (Fase 4), ambos via webhook.
 - **Google Drive API** — ingestão do material bruto via watch (webhook) na pasta observada + polling de segurança para não perder eventos se o webhook falhar.
-- **Redis + BullMQ** — cada etapa do pipeline é um job de fila; webhooks do Creatomate e do Zernio atualizam o status do item em tempo real no Kanban.
+- **Redis + BullMQ** — fila preparada em `/workers` para orquestração das fases futuras (legenda, render, aprovação, publicação). Hoje (Fase 1) a ingestão escreve direto no Supabase sem usar BullMQ — essa arquitetura será refatorada em Fase 2 para fazer toda a pipeline ser job-driven. Webhooks do Creatomate e do Zernio (futuras fases) vão atualizar o status do item em tempo real no Kanban.
 
 ## Convenções
 
