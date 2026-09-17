@@ -97,7 +97,13 @@ Cada fase é um incremento entregável e testável isoladamente antes de avança
 
 **Status (2026-09-17)**: **pulada nesta versão de teste, por decisão explícita do usuário.** O item avança direto de "renderizando" para publicação (Fase 5) sem gate de aprovação humana — ver `lib/publishing/publish-post.ts`, que já lê o item recém-renderizado e chama `getZernioClient().publish(...)` sem checar nenhum campo de aprovação.
 
-Isso contraria a "regra de ouro" original do produto (nenhum post vai ao ar sem aprovação humana explícita — ver `.docs/CLAUDE.md`) e **precisa ser implementada antes de qualquer uso real em produção** com conteúdo que envolva pessoas reais. Nenhum entregável desta fase (inline keyboard Aprovar/Editar/Rejeitar, auditoria de decisão, alerta de SLA) foi construído. Fica registrada como pendência explícita para uma iteração futura — ver item 1 da lista de pendências gerais no final deste arquivo.
+**Objetivo**: nenhum vídeo é publicado sem confirmação humana explícita.
+
+**Entregáveis**:
+Nenhum entregável foi construído nesta fase. A fase foi explicitamente pulada em favor de um release initial rápido (MVP sem gate de aprovação). Isso contraria a "regra de ouro" original do produto (nenhum post vai ao ar sem aprovação humana explícita — ver `.docs/CLAUDE.md`) e **precisa ser implementada antes de qualquer uso real em produção** com conteúdo que envolva pessoas reais.
+
+**Critério de pronto**:
+Não foi atentado nesta versão. Pendência explícita registrada para uma iteração futura — ver item 1 da lista de pendências gerais no final deste arquivo.
 
 ## Fase 5 — Publicação e Dashboard
 
@@ -109,7 +115,7 @@ Isso contraria a "regra de ouro" original do produto (nenhum post vai ao ar sem 
 - [x] Kanban (`/dashboard/kanban`) agora exibe legenda, link de render, link de publicação e erros por etapa.
 - [x] Dashboard Início (`/dashboard`) com contagem de itens por status.
 - [x] Calendário editorial (`/dashboard/calendario`) e Analytics (`/dashboard/analytics`) em formato MVP, com escopo de rota corrigido e fallback para não quebrar a página inteira se um item individual falhar ao buscar analytics.
-- [ ] Conversão de fuso horário UTC → America/Sao_Paulo: utilitário criado na Fase 3 e usado no calendário/analytics.
+- [x] Conversão de fuso horário UTC → America/Sao_Paulo: utilitário criado na Fase 3 e usado no calendário/analytics (não verificada contra timestamps reais do Zernio em produção ainda).
 
 **Pendências**:
 1. **Publicação real no Instagram ainda não está ativa** — depende de `RealZernioClient` deixar de ser stub, o que só pode acontecer depois que o usuário fornecer a documentação real da API do Zernio (fora do escopo deste plano). Até lá, o pipeline sempre usa o mock quando `ZERNIO_API_KEY` está vazio (comportamento intencional, documentado em `.env.example`).
