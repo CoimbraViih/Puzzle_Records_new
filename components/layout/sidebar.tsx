@@ -8,6 +8,8 @@ import { matchesPrefix, type UserRole } from "@/lib/auth/permissions";
 const NAV_ITEMS: { href: string; label: string; roles: UserRole[] }[] = [
   { href: "/dashboard", label: "Início", roles: ["equipe_conteudo", "editorial", "admin"] },
   { href: "/dashboard/kanban", label: "Kanban", roles: ["equipe_conteudo", "editorial", "admin"] },
+  { href: "/dashboard/calendario", label: "Calendário", roles: ["editorial", "admin"] },
+  { href: "/dashboard/analytics", label: "Analytics", roles: ["editorial", "admin"] },
   { href: "/dashboard/aprovacoes", label: "Aprovações", roles: ["editorial", "admin"] },
   { href: "/dashboard/configuracoes", label: "Configurações", roles: ["admin"] },
 ];
