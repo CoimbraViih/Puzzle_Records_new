@@ -64,3 +64,49 @@ export async function upsertPipelineItem(input: BuildPipelineItemInput) {
   if (error) throw error;
   return data; // null quando já existia (ignoreDuplicates não retorna a linha existente)
 }
+
+export interface PipelineItemRow {
+  id: string;
+  origin: PipelineItemOrigin;
+  status: string;
+  title: string | null;
+  author: string | null;
+  created_at: string;
+}
+
+const PIPELINE_STATUSES = [
+  "recebido",
+  "legenda",
+  "renderizando",
+  "aguardando_aprovacao",
+  "agendado",
+  "publicado",
+] as const;
+
+/**
+ * Nota: esta função usa o client de service role para simplificar a Fase 1
+ * (mesma factory já usada nos webhooks). Como a página já está atrás de
+ * `proxy.ts` (só usuários autenticados com papel válido chegam em
+ * `/dashboard/kanban`), o controle de acesso efetivo continua garantido —
+ * mas isso decide *não* depender da policy de RLS lida acima para a leitura
+ * da UI. Se preferir manter a leitura passando pela RLS (client autenticado
+ * do usuário, não service role), trocar por `createClient` de
+ * `lib/supabase/server.ts` nesta função antes de ir para produção.
+ */
+export async function getPipelineItemsGroupedByStatus() {
+  const supabase = getServiceRoleClient();
+  const { data, error } = await supabase
+    .from("pipeline_items")
+    .select("id, origin, status, title, author, created_at")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  const grouped = Object.fromEntries(PIPELINE_STATUSES.map((status) => [status, [] as PipelineItemRow[]]));
+  for (const item of data ?? []) {
+    (grouped[item.status] ??= []).push(item as PipelineItemRow);
+  }
+  return grouped as Record<(typeof PIPELINE_STATUSES)[number], PipelineItemRow[]>;
+}
+
+export { PIPELINE_STATUSES };
