@@ -28,6 +28,6 @@ Next.js (App Router), React, TypeScript, Tailwind CSS, shadcn/ui, Supabase (auth
 ## Convenções
 
 - Server Components por padrão no App Router; usar Client Components só onde há interatividade (Kanban, calendário, inline keyboard de aprovação refletido na UI).
-- Acesso a dados e autenticação via Supabase; permissões por papel (Operador, Aprovador/Editorial, Gestor/Admin) aplicadas tanto na UI quanto nas policies do Postgres (RLS).
+- Acesso a dados e autenticação via Supabase; permissões por papel aplicadas tanto na UI quanto nas policies do Postgres (RLS). Os 3 papéis e seus valores reais no banco (coluna `profiles.role`, texto livre): `equipe_conteudo` (Operador), `editorial` (Aprovador), `admin` (Gestor) — ver `lib/auth/permissions.ts`.
 - Toda mudança de status de um item do pipeline deve ser auditável (quem, quando, de onde) — necessário para rastrear aprovações (Seção 8 do PRD).
 - Seguir a ordem das fases em `.docs/PLAN.md`: não implementar publicação (Fase 5) antes do gate de aprovação (Fase 4) existir.

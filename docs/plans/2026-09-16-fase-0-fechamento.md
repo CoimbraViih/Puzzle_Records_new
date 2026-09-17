@@ -4,7 +4,7 @@
 
 **Goal:** Fechar a Fase 0 do Puzzle Records — o scaffold (Next.js + Supabase + permissões + shell de dashboard + estrutura BullMQ) já está implementado no repositório; falta validar tudo localmente com o checklist de QA e colocar a aplicação no ar em produção na Vercel, atendendo ao critério de pronto do `.docs/PLAN.md`.
 
-**Architecture:** Nenhuma mudança de arquitetura. A Fase 0 já entregou: Next.js App Router com Server Components por padrão, Supabase Auth (`@supabase/ssr`) com `proxy.ts` (equivalente ao middleware — Next.js 16 renomeou `middleware.ts` para `proxy.ts`, ver `node_modules/next/dist/docs/01-app/02-guides/proxy.md`) fazendo refresh de sessão e checagem de papel via `lib/auth/permissions.ts`, papéis em `public.profiles` (`operador`, `aprovador`, `gestor`), e `/workers` isolado com conexão BullMQ/Upstash sem jobs reais. O que falta é puramente operacional: confirmar que o comportamento é o esperado ponta a ponta e publicar.
+**Architecture:** Nenhuma mudança de arquitetura. A Fase 0 já entregou: Next.js App Router com Server Components por padrão, Supabase Auth (`@supabase/ssr`) com `proxy.ts` (equivalente ao middleware — Next.js 16 renomeou `middleware.ts` para `proxy.ts`, ver `node_modules/next/dist/docs/01-app/02-guides/proxy.md`) fazendo refresh de sessão e checagem de papel via `lib/auth/permissions.ts`, papéis em `public.profiles` (`equipe_conteudo`, `editorial`, `admin` — valores reais do projeto Supabase reaproveitado, não um enum inventado), e `/workers` isolado com conexão BullMQ/Upstash sem jobs reais. O que falta é puramente operacional: confirmar que o comportamento é o esperado ponta a ponta e publicar.
 
 **Tech Stack:** (inalterado) Next.js 16 (App Router) + TypeScript, Tailwind CSS v4, shadcn/ui, Supabase (`@supabase/supabase-js`, `@supabase/ssr`), BullMQ + ioredis, Vitest, Vercel, Upstash Redis.
 
@@ -17,7 +17,7 @@
 - A CLI da Vercel não está instalada nesta máquina (`npm i -g vercel` recomendado, mas o deploy também pode ser feito 100% pelo dashboard web, que é o caminho usado abaixo para não exigir instalação global).
 
 **Pré-requisitos que o humano precisa confirmar antes de começar:**
-- Acesso ao projeto Supabase já existente e confirmação de que a migration `supabase/migrations/00000000000001_init_profiles_and_audit.sql` já foi aplicada nele (tabelas `profiles`/`audit_log` visíveis no Supabase Studio). Se ainda não foi aplicada, a Task 1 cobre isso.
+- `public.profiles` **já existe em produção** (reaproveitado de uma versão anterior do produto, com RLS e papéis próprios — `equipe_conteudo`/`editorial`/`admin`) e **não deve ser recriado**. Confirme apenas que a migration `supabase/migrations/00000000000001_add_audit_log.sql` (só cria `audit_log`) já foi aplicada (tabela `audit_log` visível no Supabase Studio). Se ainda não foi aplicada, a Task 1 cobre isso.
 - Acesso ao time Vercel: `https://vercel.com/viihcoimbra7x-9058s-projects`.
 - Uma connection string Redis (Upstash) válida (`rediss://...`), a mesma usada em `.env.local` ou uma nova para o ambiente hospedado.
 - Pelo menos um usuário de teste criado no Supabase Auth para rodar o checklist de QA (login real).
@@ -28,25 +28,27 @@
 
 **Files:** nenhum arquivo novo — verificação/aplicação no Supabase Studio.
 
-**Step 1: Verificar se as tabelas já existem**
+**Importante:** `public.profiles` **já existe em produção**, reaproveitado de uma versão anterior do produto (RLS e papéis próprios, coluna `role` texto livre com valores `equipe_conteudo`/`editorial`/`admin` — ver `lib/auth/permissions.ts`). **Não recrie `profiles` nem aplique a antiga migration `00000000000001_init_profiles_and_audit.sql`** — esse arquivo foi removido do repositório justamente porque nunca chegou a ser aplicada e recriaria `profiles`/um enum incompatíveis com os dados reais já existentes. A única migration válida desta fase é `supabase/migrations/00000000000001_add_audit_log.sql`, que cria apenas `audit_log`.
 
-No Supabase Studio do projeto (Table Editor), confirme se `public.profiles` e `public.audit_log` existem com RLS habilitada (ícone de cadeado).
+**Step 1: Verificar se `audit_log` já existe**
 
-**Step 2: Se não existirem, aplicar a migration**
+No Supabase Studio do projeto (Table Editor), confirme se `public.profiles` já existe (deve existir — não crie) e se `public.audit_log` existe com RLS habilitada (ícone de cadeado).
 
-Copie o conteúdo de `supabase/migrations/00000000000001_init_profiles_and_audit.sql` e execute no SQL Editor do Supabase Studio (ou, se a CLI do Supabase estiver instalada e linkada: `npx supabase db push`).
+**Step 2: Se `audit_log` não existir, aplicar a migration**
 
-Expected: tabelas criadas, trigger `on_auth_user_created` ativo, policies visíveis em Authentication → Policies.
+Copie o conteúdo de `supabase/migrations/00000000000001_add_audit_log.sql` e execute no SQL Editor do Supabase Studio (ou, se a CLI do Supabase estiver instalada e linkada: `npx supabase db push`).
 
-**Step 3: Garantir que existe pelo menos um usuário `gestor`**
+Expected: tabela `audit_log` criada, policies visíveis em Authentication → Policies. `profiles` permanece inalterada.
 
-Crie um usuário de teste (Supabase Studio → Authentication → Add user, ou pela própria tela `/login` se o signup estiver habilitado) e promova-o:
+**Step 3: Confirmar que existe pelo menos um usuário `admin`**
+
+O usuário real do projeto (`victor-coimbra@hotmail.com`) já está com `role = 'admin'`. Para um usuário de teste adicional, promova-o:
 
 ```sql
-update public.profiles set role = 'gestor' where email = 'seu-email@exemplo.com';
+update public.profiles set role = 'admin' where email = 'seu-email@exemplo.com';
 ```
 
-Expected: `select role from public.profiles where email = 'seu-email@exemplo.com';` retorna `gestor`.
+Expected: `select role from public.profiles where email = 'seu-email@exemplo.com';` retorna `admin`.
 
 Sem commit nesta task (mudança é só no banco).
 
@@ -65,11 +67,11 @@ Expected: servidor sobe em `http://localhost:3000` sem erros no terminal.
 
 1. Acessar `http://localhost:3000` deslogado → deve redirecionar para `/login`.
 2. Acessar `http://localhost:3000/dashboard` deslogado → deve redirecionar para `/login`.
-3. Logar com o usuário `gestor` criado na Task 1 → deve redirecionar para `/dashboard` mostrando "Nenhum item no pipeline ainda", com sidebar mostrando todos os itens (Início, Kanban, Aprovações, Configurações).
-4. Rodar `update public.profiles set role = 'operador' where email = '...'` no SQL Editor, deslogar (botão "Sair") e logar de novo → sidebar mostra só "Início" e "Kanban".
-5. Com esse mesmo usuário `operador`, tentar acessar `http://localhost:3000/dashboard/aprovacoes` direto pela URL → deve redirecionar de volta para `/dashboard` (bloqueio de rota funcionando, não só ocultação visual).
-6. Rodar `update public.profiles set role = 'aprovador' where email = '...'`, deslogar e logar de novo → sidebar mostra "Aprovações" também, e a rota `/dashboard/aprovacoes` fica acessível (mesmo que a página ainda não exista de verdade — isso será implementado na Fase 4).
-7. Voltar o papel para `gestor` e confirmar acesso a `/dashboard/configuracoes`.
+3. Logar com o usuário `admin` (já existente em produção, `victor-coimbra@hotmail.com`, ou o de teste da Task 1) → deve redirecionar para `/dashboard` mostrando "Nenhum item no pipeline ainda", com sidebar mostrando todos os itens (Início, Kanban, Aprovações, Configurações).
+4. Rodar `update public.profiles set role = 'equipe_conteudo' where email = '...'` no SQL Editor, deslogar (botão "Sair") e logar de novo → sidebar mostra só "Início" e "Kanban".
+5. Com esse mesmo usuário `equipe_conteudo`, tentar acessar `http://localhost:3000/dashboard/aprovacoes` direto pela URL → deve redirecionar de volta para `/dashboard` (bloqueio de rota funcionando, não só ocultação visual).
+6. Rodar `update public.profiles set role = 'editorial' where email = '...'`, deslogar e logar de novo → sidebar mostra "Aprovações" também, e a rota `/dashboard/aprovacoes` fica acessível (mesmo que a página ainda não exista de verdade — isso será implementado na Fase 4).
+7. Voltar o papel para `admin` e confirmar acesso a `/dashboard/configuracoes`.
 8. Clicar em "Sair" → volta para `/login`, e `/dashboard` volta a redirecionar para `/login`.
 
 Expected: todos os 8 passos se comportam exatamente como descrito. Se algum falhar, pare e trate como bug antes de prosseguir (não é esperado, já que a lógica tem testes unitários e review de segurança feitos, mas QA manual existe para pegar o que os testes não cobrem).
@@ -134,7 +136,7 @@ Sem commit de código nesta task.
 
 **Step 1: Repetir o checklist da Task 2 (Step 2) contra a URL pública da Vercel**
 
-Login com os três papéis (`operador`, `aprovador`, `gestor`), bloqueio/liberação de rota, e logout — tudo contra a URL de produção, não `localhost`.
+Login com os três papéis (`equipe_conteudo`, `editorial`, `admin`), bloqueio/liberação de rota, e logout — tudo contra a URL de produção, não `localhost`.
 
 Expected: comportamento idêntico ao ambiente local.
 
@@ -176,9 +178,9 @@ git push origin main
 ## Critério de pronto (definition of done da Fase 0)
 
 - [x] Scaffold Next.js + TypeScript + Tailwind + shadcn/ui.
-- [x] Projeto Supabase com autenticação e papéis (`operador`, `aprovador`, `gestor`).
+- [x] Projeto Supabase com autenticação e papéis (`equipe_conteudo`, `editorial`, `admin`).
 - [x] Estrutura `/workers` com BullMQ + Upstash Redis conectando (sem jobs reais).
-- [ ] Migration aplicada no projeto Supabase real e usuário `gestor` de teste criado (Task 1).
+- [ ] Migration `add_audit_log` aplicada no projeto Supabase real (`profiles` já existe e não é recriada) e usuário `admin` de teste confirmado (Task 1).
 - [ ] QA manual local completo, testes unitários e build de produção passando (Task 2).
 - [ ] Deploy respondendo em produção na Vercel (Task 3).
 - [ ] Permissões por papel validadas na URL pública, não só localmente (Task 4).

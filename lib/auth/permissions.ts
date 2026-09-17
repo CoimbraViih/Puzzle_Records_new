@@ -1,7 +1,7 @@
-export type UserRole = "operador" | "aprovador" | "gestor";
+export type UserRole = "equipe_conteudo" | "editorial" | "admin";
 
 export function isUserRole(value: unknown): value is UserRole {
-  return value === "operador" || value === "aprovador" || value === "gestor";
+  return value === "equipe_conteudo" || value === "editorial" || value === "admin";
 }
 
 type RoutePermission = {
@@ -11,10 +11,10 @@ type RoutePermission = {
 
 // Regras avaliadas na ordem declarada; a primeira que casar com o prefixo decide.
 const ROUTE_PERMISSIONS: RoutePermission[] = [
-  { prefix: "/dashboard/configuracoes", roles: ["gestor"] },
-  { prefix: "/dashboard/aprovacoes", roles: ["aprovador", "gestor"] },
-  { prefix: "/dashboard/kanban", roles: ["operador", "aprovador", "gestor"] },
-  { prefix: "/dashboard", roles: ["operador", "aprovador", "gestor"] },
+  { prefix: "/dashboard/configuracoes", roles: ["admin"] },
+  { prefix: "/dashboard/aprovacoes", roles: ["editorial", "admin"] },
+  { prefix: "/dashboard/kanban", roles: ["equipe_conteudo", "editorial", "admin"] },
+  { prefix: "/dashboard", roles: ["equipe_conteudo", "editorial", "admin"] },
 ];
 
 export function matchesPrefix(pathname: string, prefix: string): boolean {
