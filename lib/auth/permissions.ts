@@ -1,5 +1,9 @@
 export type UserRole = "operador" | "aprovador" | "gestor";
 
+export function isUserRole(value: unknown): value is UserRole {
+  return value === "operador" || value === "aprovador" || value === "gestor";
+}
+
 type RoutePermission = {
   prefix: string;
   roles: UserRole[];

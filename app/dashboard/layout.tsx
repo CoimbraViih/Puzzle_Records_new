@@ -3,11 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
-import type { UserRole } from "@/lib/auth/permissions";
-
-function isUserRole(value: string | undefined | null): value is UserRole {
-  return value === "operador" || value === "aprovador" || value === "gestor";
-}
+import { isUserRole, type UserRole } from "@/lib/auth/permissions";
 
 export default async function DashboardLayout({
   children,

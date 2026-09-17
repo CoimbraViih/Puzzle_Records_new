@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canAccessRoute, type UserRole } from "./permissions";
+import { canAccessRoute, isUserRole, type UserRole } from "./permissions";
 
 describe("canAccessRoute", () => {
   it("permite gestor acessar qualquer rota do dashboard", () => {
@@ -39,5 +39,20 @@ describe("canAccessRoute", () => {
     expect(canAccessRoute("operador", "/dashboard/aprovacoes-interno")).toBe(true);
     expect(canAccessRoute("aprovador", "/dashboard/aprovacoes-interno")).toBe(true);
     expect(canAccessRoute("gestor", "/dashboard/aprovacoes-interno")).toBe(true);
+  });
+});
+
+describe("isUserRole", () => {
+  it("aceita os três papéis válidos", () => {
+    expect(isUserRole("operador")).toBe(true);
+    expect(isUserRole("aprovador")).toBe(true);
+    expect(isUserRole("gestor")).toBe(true);
+  });
+
+  it("rejeita undefined, null, string vazia e valores arbitrários", () => {
+    expect(isUserRole(undefined)).toBe(false);
+    expect(isUserRole(null)).toBe(false);
+    expect(isUserRole("")).toBe(false);
+    expect(isUserRole("admin")).toBe(false);
   });
 });
