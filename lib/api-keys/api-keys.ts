@@ -87,9 +87,18 @@ export async function revokeApiKey(id: string): Promise<void> {
 
 /**
  * Verifica uma chave recebida em texto puro (ex.: header Authorization de um
- * webhook externo) contra o hash salvo. Fail-closed: qualquer erro de banco,
- * chave sem o prefixo esperado, inexistente ou revogada retorna null — nunca
- * lança para o chamador tratar como "autorizado" por engano.
+ * webhook externo) contra o hash salvo.
+ *
+ * Retorna null quando a checagem foi concluída e a chave NÃO é válida:
+ * prefixo incorreto, hash não encontrado ou chave revogada. Um retorno null
+ * é a única forma de "não autorizado" que este helper produz.
+ *
+ * Um erro de banco de dados NÃO é engolido — a função lança (`throw error`).
+ * Chamadores nunca devem envolver esta chamada num try/catch que trate a
+ * exceção capturada como "autorizado": isso seria fail-open. Uma exceção
+ * significa que a própria checagem falhou (ex.: tabela api_keys
+ * indisponível) e deve propagar para falhar a requisição (ex.: 500), nunca
+ * ser interpretada como "chave válida".
  */
 export async function verifyApiKey(plaintext: string): Promise<{ id: string; name: string } | null> {
   if (!plaintext.startsWith(KEY_PREFIX)) return null;

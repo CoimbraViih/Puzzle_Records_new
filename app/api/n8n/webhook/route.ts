@@ -13,6 +13,11 @@ export const dynamic = "force-dynamic";
 // limite usado em lib/render/media.ts para o download do Drive).
 const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
 
+// externalId é escolhido pelo chamador (diferente de Drive/Telegram, que usam
+// IDs gerados pelo próprio provedor) e vira um segmento do caminho de storage
+// (`n8n/${externalId}.ext`) — validado para impedir path traversal (ex.: "../").
+const EXTERNAL_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+
 interface N8nWebhookPayload {
   externalId?: string;
   title?: string | null;
@@ -61,6 +66,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "externalId e mediaUrl são obrigatórios" }, { status: 400 });
   }
 
+  if (!EXTERNAL_ID_PATTERN.test(payload.externalId)) {
+    return NextResponse.json({ error: "externalId inválido" }, { status: 400 });
+  }
+
   if (!isHttpsUrl(payload.mediaUrl)) {
     return NextResponse.json({ error: "mediaUrl precisa ser uma URL https" }, { status: 400 });
   }
@@ -99,19 +108,36 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "falha ao salvar mídia" }, { status: 500 });
   }
 
-  const result = await upsertPipelineItem({
-    origin: "n8n",
-    externalId: payload.externalId,
-    title: payload.title ?? null,
-    author: payload.author ?? null,
-    mimeType,
-    storagePath,
-    metadata: { ...payload.metadata, apiKeyId: apiKey.id, apiKeyName: apiKey.name },
-  });
+  // A mídia já foi gravada no bucket raw-media neste ponto. Se o registro do
+  // pipeline_item falhar daqui pra frente (ex.: migration 4 não aplicada —
+  // constraint de `origin` rejeita 'n8n'), não deixamos a exceção escapar:
+  // isso deixaria o arquivo órfão no storage e devolveria um 500 genérico
+  // (sem JSON) para o n8n, que tende a reentregar o mesmo request
+  // indefinidamente. Registramos externalId/storagePath para limpeza manual
+  // e respondemos com um contrato de erro estável, igual aos demais ramos.
+  let result: Awaited<ReturnType<typeof upsertPipelineItem>>;
+  try {
+    result = await upsertPipelineItem({
+      origin: "n8n",
+      externalId: payload.externalId,
+      title: payload.title ?? null,
+      author: payload.author ?? null,
+      mimeType,
+      storagePath,
+      metadata: { ...payload.metadata, apiKeyId: apiKey.id, apiKeyName: apiKey.name },
+    });
 
-  if (result) {
-    await captionQueue.add("caption", { pipelineItemId: result.id });
-    triggerQueueDrain();
+    if (result) {
+      await captionQueue.add("caption", { pipelineItemId: result.id });
+      triggerQueueDrain();
+    }
+  } catch (error) {
+    console.error(
+      "[n8n/webhook] falha ao registrar pipeline_item após upload para o storage:",
+      { externalId: payload.externalId, storagePath },
+      error,
+    );
+    return NextResponse.json({ error: "falha ao registrar o item" }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true, pipelineItemId: result?.id ?? null });

@@ -67,6 +67,19 @@ describe("POST /api/n8n/webhook", () => {
     expect(response.status).toBe(400);
   });
 
+  it("retorna 400 quando externalId contém caracteres inválidos (ex.: path traversal)", async () => {
+    verifyApiKey.mockResolvedValue({ id: "key-1", name: "n8n prod" });
+    const response = await POST(
+      makeRequest(
+        { externalId: "../../etc/passwd", mediaUrl: "https://cdn.n8n.io/a.jpg" },
+        { authorization: "Bearer pzr_valida" },
+      ),
+    );
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toMatch(/externalId inválido/);
+  });
+
   it("cria o pipeline_item e enfileira a legenda quando tudo é válido", async () => {
     verifyApiKey.mockResolvedValue({ id: "key-1", name: "n8n prod" });
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -90,5 +103,29 @@ describe("POST /api/n8n/webhook", () => {
     );
     expect(captionQueueAdd).toHaveBeenCalledWith("caption", { pipelineItemId: "item-1" });
     expect(triggerQueueDrain).toHaveBeenCalled();
+  });
+
+  it("retorna 500 com JSON estruturado (sem lançar) quando upsertPipelineItem falha após o upload", async () => {
+    verifyApiKey.mockResolvedValue({ id: "key-1", name: "n8n prod" });
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      headers: new Headers({ "content-length": "10" }),
+      arrayBuffer: async () => new ArrayBuffer(10),
+    });
+    storageUpload.mockResolvedValue({ error: null });
+    upsertPipelineItem.mockRejectedValue(new Error("relation \"api_keys\" does not exist"));
+
+    const response = await POST(
+      makeRequest(
+        { externalId: "x", mediaUrl: "https://cdn.n8n.io/a.jpg", mimeType: "image/jpeg" },
+        { authorization: "Bearer pzr_valida" },
+      ),
+    );
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toBeTruthy();
+    expect(captionQueueAdd).not.toHaveBeenCalled();
+    expect(triggerQueueDrain).not.toHaveBeenCalled();
   });
 });
