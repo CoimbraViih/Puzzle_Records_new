@@ -1,6 +1,6 @@
 import { requireEnv } from "@/lib/ingestion/cron-auth";
 
-const CREATOMATE_API_BASE = "https://api.creatomate.com/v1";
+const CREATOMATE_API_BASE = "https://api.creatomate.com/v2";
 
 export interface CreatomateRenderResult {
   id: string;
@@ -38,8 +38,12 @@ export async function startCreatomateRender(
     throw new Error(`Creatomate render falhou com status ${response.status}`);
   }
 
-  const payload = (await response.json()) as CreatomateRenderResult[];
-  const render = payload[0];
-  if (!render) throw new Error("Creatomate não retornou nenhum render na resposta");
+  // A API v2 do Creatomate retorna um único objeto quando o request é um
+  // único template_id (não um array — v1 retornava array; confirmado batendo
+  // na API real com uma chave válida). Mantemos suporte defensivo ao formato
+  // de array também, caso a API alguma vez responda em lote.
+  const payload = (await response.json()) as CreatomateRenderResult | CreatomateRenderResult[];
+  const render = Array.isArray(payload) ? payload[0] : payload;
+  if (!render || !render.id) throw new Error("Creatomate não retornou nenhum render na resposta");
   return render;
 }
