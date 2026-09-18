@@ -62,36 +62,35 @@ Cada fase é um incremento entregável e testável isoladamente antes de avança
 
 ## Fase 2 — Geração de legenda (IA)
 
-**Status (2026-09-17)**: código implementado e commitado em `worktree-fase-2-3-5-pipeline`. A lacuna arquitetural crítica identificada ao final da Fase 1 (webhooks gravando direto no Supabase, sem consumidor de fila) foi resolvida antes de começar esta fase: `workers/queues.ts` agora roda pelo padrão **cron-drain** — o cron `/api/queue/process` (`vercel.ts`, a cada 5 min) drena a fila BullMQ dentro de uma Serverless Function, em vez de depender de um worker sempre-ligado.
+**Status (2026-09-18)**: código implementado, revisado (8 agentes de revisão em paralelo cobrindo correção, comportamento removido, eficiência, simplificação, reuso e convenções) e **mergeado em `main` via PR #3, deployado em produção**. A lacuna arquitetural crítica identificada ao final da Fase 1 foi resolvida: `workers/queues.ts` roda pelo padrão **cron-drain** — o cron consolidado `/api/cron/daily` drena a fila BullMQ dentro de uma Serverless Function.
 
 **Entregáveis**:
-- [x] Colunas de legenda/render/publicação e tabela de auditoria de eventos de sistema adicionadas via migration `supabase/migrations/00000000000003_add_caption_render_publish.sql` (ainda não aplicada no projeto real — ver pendências).
-- [x] Cliente OpenRouter (`lib/captioning/`) com chat completions em **structured output / JSON schema** (manchete + corpo), prompt com instrução explícita de não inventar fatos sobre pessoas reais.
-- [x] `JSON.parse` da resposta da OpenRouter protegido contra retorno malformado (fix pós-review).
-- [x] Processor de geração de legenda consumindo itens em "recebido" via fila, disparado automaticamente a partir da ingestão, avançando o item para "legenda".
+- [x] Colunas de legenda/render/publicação e tabela de auditoria adicionadas via migration `00000000000003_add_caption_render_publish.sql` — aplicada pelo usuário no Supabase real (confirmado 2026-09-17).
+- [x] Cliente OpenRouter (`lib/captions/`) com structured output / JSON schema, prompt com instrução explícita de não inventar fatos sobre pessoas reais. `JSON.parse` protegido contra retorno malformado.
+- [x] Processor de geração de legenda consumindo itens em "recebido" via fila, disparado automaticamente a partir da ingestão.
+- [x] **Fix pós-review**: o processor relança erros transitórios em vez de engoli-los, para o mecanismo de retry do `drainQueue` funcionar de verdade (antes, toda falha virava permanente na 1ª tentativa, sem retry real).
 
 **Pendências**:
-1. `OPENROUTER_API_KEY` real ainda não preenchida — hoje qualquer chamada real falha; só testável quando a credencial for configurada (ver checklist de QA).
-2. Migration `00000000000003` (ver Fase 5, item de pendências) ainda não aplicada no Supabase real.
+1. **`OPENROUTER_API_KEY` ainda não configurada em lugar nenhum** (nem local, nem produção) — o usuário nunca forneceu essa credencial. Sem ela, nenhuma legenda é gerada; itens ficam presos em "recebido".
+2. `REDIS_URL` configurada em produção, mas a permissão de escrita (leitura/escrita vs. `default_ro`, pendência histórica da Fase 0) não foi reverificada nesta rodada — confirmar antes de considerar a fila 100% operacional.
 
-**Critério de pronto**: item processado recebe legenda estruturada e transita de status automaticamente; falhas de geração ficam visíveis, não travam a fila. *(Código pronto ✅; validação end-to-end com credencial real pendente — Step 3 do checklist de QA abaixo.)*
+**Critério de pronto**: item processado recebe legenda estruturada e transita de status automaticamente; falhas de geração ficam visíveis, não travam a fila. *(Código pronto, revisado e deployado ✅; validação end-to-end bloqueada pela pendência #1 — falta a API key.)*
 
 ## Fase 3 — Render (Creatomate)
 
-**Status (2026-09-17)**: código implementado e commitado. Utilitário de conversão UTC → America/Sao_Paulo criado (`lib/time/`) como base compartilhada para esta fase e a Fase 5.
+**Status (2026-09-18)**: código implementado, revisado e mergeado em `main`. Utilitário de conversão UTC → America/Sao_Paulo criado (`lib/time/`) como base compartilhada para esta fase e a Fase 5. **Template criado pelo usuário e validado com sucesso via `npm run creatomate:smoke-test` contra a API real** (endpoint correto: `POST https://api.creatomate.com/v2/renders`, retorna objeto único — a v1 retornava array, tratado defensivamente). Camadas reais do template mapeadas: `Manchete`, `Foto Esquerda`, `Foto Direita`, `Selo`.
 
 **Entregáveis**:
-- [x] Resolução de mídia renderizável: signed URL do Supabase Storage com fallback de download sob demanda do Drive quando necessário.
-- [x] Cliente Creatomate (`lib/rendering/creatomate-client.ts`) e builder de `modifications` configurável por env vars (`CREATOMATE_LAYER_HEADLINE`, `CREATOMATE_LAYER_PHOTO_1`, `CREATOMATE_LAYER_PHOTO_2`, `CREATOMATE_LAYER_BADGE`), evitando hardcode de nomes de camada do template.
-- [x] Processor de render (dispara job assíncrono no Creatomate), webhook de conclusão em `app/api/creatomate/webhook/route.ts`, e script de smoke test (`npm run creatomate:smoke-test`, `scripts/creatomate-smoke-test.ts`).
-- [x] Falha ao gravar `render_error` no banco agora é registrada em vez de silenciosa (fix pós-review).
-- [x] Item avança de "legenda" para "renderizando" e, ao concluir (via webhook), o Kanban passa a exibir o link de render.
+- [x] Resolução de mídia renderizável: signed URL do Supabase Storage com fallback de download sob demanda do Drive. Guard de tamanho de arquivo agora falha fechado se o Drive não informar o `size` (fix pós-review — um `?? 0` deixava passar arquivos sem esse campo direto para o buffer em memória).
+- [x] Cliente Creatomate (`lib/render/creatomate-client.ts`) e builder de `modifications` configurável por env vars, evitando hardcode de nomes de camada do template.
+- [x] Processor de render, webhook de conclusão em `app/api/creatomate/webhook/route.ts` (agora com guard `.is("render_url", null)` além do CAS de status — fix pós-review crítico: uma entrega duplicada do webhook do Creatomate podia enfileirar a publicação duas vezes, publicando duas vezes no Instagram), e script de smoke test.
+- [x] Processor não relança mais erros que aconteçam **depois** de um render já ter sido disparado no Creatomate (fix pós-review) — evita que um retry da fila dispare um segundo render para o mesmo item.
+- [x] Item avança de "legenda" para "renderizando" e, ao concluir (via webhook), o Kanban exibe o link de render.
 
 **Pendências**:
-1. **O template do Creatomate ainda não existe** — precisa ser desenhado manualmente no editor visual (linguagem de design de referência: manchete, foto dupla, selo "AGORA/IMPACTO", card de perfil do Instagram) antes que `npm run creatomate:smoke-test` possa rodar contra a API de verdade. Sem template real, o código está implementado mas não verificado ponta a ponta.
-2. `CREATOMATE_API_KEY`/`CREATOMATE_TEMPLATE_ID`/`CREATOMATE_WEBHOOK_SECRET` ainda vazios em `.env.local`.
+1. `CREATOMATE_LAYER_PHOTO_1`/`CREATOMATE_LAYER_PHOTO_2` (`Foto Esquerda`/`Foto Direita`) já configurados em produção (Vercel) junto com as demais env vars de Creatomate.
 
-**Critério de pronto**: item com legenda gera vídeo correspondente automaticamente; troca de versão de template só entra em produção se o smoke test passar. *(Código pronto ✅; smoke test contra template real ainda não executado — depende da pendência #1 acima.)*
+**Critério de pronto**: item com legenda gera vídeo correspondente automaticamente; troca de versão de template só entra em produção se o smoke test passar. *(Código pronto ✅ e validado contra a API real e o template de produção.)*
 
 ## Fase 4 — Aprovação (Telegram)
 
@@ -107,41 +106,45 @@ Não foi atentado nesta versão. Pendência explícita registrada para uma itera
 
 ## Fase 5 — Publicação e Dashboard
 
-**Status (2026-09-17)**: código implementado e commitado, cobrindo o núcleo de publicação e um MVP de dashboard (Início, Calendário, Analytics).
+**Status (2026-09-18)**: código implementado, revisado e mergeado em `main`, cobrindo o núcleo de publicação e um MVP de dashboard (Início, Calendário, Analytics).
 
 **Entregáveis**:
-- [x] Interface `ZernioClient` (`lib/publishing/zernio-client.ts`) com `MockZernioClient` funcional (`lib/publishing/mock-zernio-client.ts`, loga `[zernio:mock] publicaria...` no console e simula sucesso) e `RealZernioClient` (`lib/publishing/real-zernio-client.ts`) implementado contra a API real (`POST /v1/posts` com `publishNow: true` e `x-request-id` = `pipelineItemId` para idempotência, `GET /v1/analytics?postId=` para métricas). `getZernioClient()` escolhe a implementação real só se `ZERNIO_API_KEY` estiver preenchida — como a chave real já foi fornecida pelo usuário, o pipeline agora publica de verdade em vez de usar o mock.
-- [x] Processor de publicação imediata (`lib/publishing/publish-post.ts`) com error-handling robusto: grava `publish_error` em caso de falha, registra `publish_post_id`/`publish_permalink`/`published_at` em caso de sucesso, e emite evento de auditoria (`logSystemAuditEvent`) a cada transição de status.
-- [x] Kanban (`/dashboard/kanban`) agora exibe legenda, link de render, link de publicação e erros por etapa.
-- [x] Dashboard Início (`/dashboard`) com contagem de itens por status.
-- [x] Calendário editorial (`/dashboard/calendario`) e Analytics (`/dashboard/analytics`) em formato MVP, com escopo de rota corrigido e fallback para não quebrar a página inteira se um item individual falhar ao buscar analytics.
-- [x] Conversão de fuso horário UTC → America/Sao_Paulo: utilitário criado na Fase 3 e usado no calendário/analytics (não verificada contra timestamps reais do Zernio em produção ainda).
+- [x] Interface `ZernioClient` com `MockZernioClient` (fallback quando `ZERNIO_API_KEY` está vazio) e `RealZernioClient` (`lib/publishing/real-zernio-client.ts`) implementado e testado contra a API real (`GET /v1/accounts` retornou 200 com a chave fornecida). Parsing de resposta 409 endurecido contra corpo vazio (fix pós-review).
+- [x] Processor de publicação imediata (`lib/publishing/publish-post.ts`) com auditoria a cada transição. **Fix pós-review crítico**: o processor não relança mais erros que aconteçam depois de `client.publish()` já ter retornado sucesso (post já está no ar) — antes, um retry da fila nessa janela chamaria `publish()` de novo e postaria duas vezes no Instagram.
+- [x] Kanban, Dashboard Início, Calendário editorial e Analytics (MVP).
+- [x] Conversão de fuso horário UTC → America/Sao_Paulo usada no calendário/analytics.
 
 **Pendências**:
-1. ~~Publicação real no Instagram ainda não está ativa~~ — `RealZernioClient` implementado e `GET /v1/accounts` confirmado (200) com a API key real. **Atenção**: essa API key só tem a conta `@althorya.ai` conectada no Zernio, não uma conta da Puzzle Records — uso intencional confirmado pelo usuário para este teste. `ZERNIO_INSTAGRAM_ACCOUNT_ID` preenchido com o accountId dessa conta. Falta só validar um `publish()` real de ponta a ponta (checklist de QA abaixo) — ainda não executado para não postar no Instagram sem confirmação explícita do momento certo.
-2. **Relatórios/exportação e busca/filtros completos do dashboard** (item do PRD Fase 5) **ficam fora deste plano** — não implementados; pendência para uma iteração futura.
-3. Migrations já aplicadas pelo usuário no Supabase real (confirmado 2026-09-17).
-4. **Cadência de cron compartilhada com a pendência #7 da Fase 1**: o novo cron `/api/queue/process` (`*/5 * * * *`, drena a fila de legenda/render/publicação) tem exatamente o mesmo risco não verificado já registrado para `/api/drive/poll` — o plano Vercel Hobby confirmado só roda crons diários, então nenhum dos dois crons de 5 em 5 minutos tem cadência garantida até a conta ser migrada para o plano Pro (ou até isso ser testado no primeiro deploy real). Resolver os dois juntos quando a decisão de projeto/plano Vercel for tomada.
+1. **API key do Zernio conectada só tem a conta `@althorya.ai`, não uma conta da Puzzle Records** — uso intencional confirmado pelo usuário para este teste (`ZERNIO_INSTAGRAM_ACCOUNT_ID` já preenchido com o accountId real dessa conta, tanto local quanto em produção). Falta validar um `publish()` real de ponta a ponta — ação deliberadamente **não executada ainda**, pois publica de verdade no Instagram; requer confirmação explícita do momento certo.
+2. **Relatórios/exportação e busca/filtros completos do dashboard** (item do PRD Fase 5) ficam fora deste plano — pendência futura.
 
-**Critério de pronto**: post aprovado é publicado/agendado corretamente no Instagram, horários exibidos batem com America/Sao_Paulo, e o dashboard mostra analytics reais vindos do Zernio. *(Código e mock funcionando ✅; publicação real no Instagram, template do Creatomate e gate de aprovação continuam pendentes — ver checklist de QA abaixo.)*
+**Critério de pronto**: post aprovado é publicado/agendado corretamente no Instagram, horários exibidos batem com America/Sao_Paulo, e o dashboard mostra analytics reais vindos do Zernio. *(Código pronto, revisado e deployado ✅; publicação real de ponta a ponta ainda não executada por decisão deliberada.)*
 
 ## Pendências gerais registradas ao fechar as Fases 2/3/5
 
-1. **Gate de aprovação (Fase 4) foi pulado por decisão do usuário** nesta versão de teste — precisa ser implementado antes de qualquer uso real em produção com pessoas reais envolvidas (ver seção Fase 4 acima). **Isso continua valendo mesmo com `RealZernioClient` implementado**: o pipeline publica de verdade no Instagram sem revisão humana.
-2. ~~`RealZernioClient` continua como stub~~ — implementado (`lib/publishing/real-zernio-client.ts`) usando a documentação pública da API (base `https://zernio.com/api`, `POST /v1/posts`, `GET /v1/analytics`). Falta só `ZERNIO_INSTAGRAM_ACCOUNT_ID` no `.env.local` e validação end-to-end com um post real.
-3. ~~Template do Creatomate está sendo criado pelo usuário~~ — template pronto ("Blank template", segue a linguagem de design: manchete, foto dupla, selo, card de perfil), env vars de camada preenchidas e `npm run creatomate:smoke-test` **validado com sucesso** contra a API real em 2026-09-18 (render iniciado, `status: planned`). Corrigido de quebra um bug real nesse processo: `scripts/creatomate-smoke-test.ts` e `scripts/setup-telegram-webhook.ts` usavam `dotenv/config` puro, que só lê `.env` — o projeto usa só `.env.local`, então os scripts nunca carregavam nenhuma env var. Ambos agora apontam explicitamente para `.env.local`.
-4. **Relatórios/exportação e busca/filtros completos do dashboard** (Fase 5 do PRD) ficam fora deste plano — pendência futura.
-5. Migrations aplicadas pelo usuário no Supabase real (confirmado 2026-09-17).
-6. **`REDIS_URL` e `OPENROUTER_API_KEY` ainda vazios em `.env.local`** — sem `REDIS_URL` (leitura/escrita) o BullMQ não enfileira nada e a Fase 2 não roda; sem `OPENROUTER_API_KEY` a geração de legenda falha em toda tentativa.
-7. **Cadência de cron do plano Vercel Hobby**: `/api/queue/process` soma-se a `/api/drive/poll` (pendência #7 da Fase 1) como cron de 5 em 5 minutos sem confirmação de que o plano contratado suporta essa cadência.
+1. **Gate de aprovação (Fase 4) foi pulado por decisão do usuário** nesta versão de teste — precisa ser implementado antes de qualquer uso real em produção com pessoas reais envolvidas. **Isso já está em produção**: o pipeline publica de verdade no Instagram sem revisão humana assim que `OPENROUTER_API_KEY` for configurada (hoje ainda bloqueado só por essa credencial faltando).
+2. **Relatórios/exportação e busca/filtros completos do dashboard** (Fase 5 do PRD) ficam fora deste plano — pendência futura.
+3. **`OPENROUTER_API_KEY` nunca foi fornecida** — é a única credencial que falta para o pipeline rodar de ponta a ponta em produção.
+4. **Permissão de escrita do `REDIS_URL`** (pendência histórica da Fase 0 — a connection string original era `default_ro`, só leitura) não foi reverificada nesta rodada; confirmar antes de considerar a fila operacional de verdade.
+
+## Deploy em produção (2026-09-18)
+
+- **Projeto Vercel correto identificado e usado**: `puzzle_records_new` (criado 15/09, linkado corretamente ao repositório `CoimbraViih/Puzzle_Records_new`) — **não** o `puzzle-records-bldm`, que roda uma aplicação de produção real e não relacionada (n8n, Cut.Pro, aprovação via WhatsApp, Zernio já ativo). A narrativa de "bloqueio, sem projeto próprio" registrada anteriormente na Fase 1 estava desatualizada — o projeto já existia, só não tinha nenhuma env var configurada.
+- PR #3 (`worktree-fase-2-3-5-pipeline` → `main`) revisado, corrigido e **mergeado em `main`**.
+- **Dois bugs de deploy só descobertos no deploy real** (não visíveis em `npm run build` local sem as env vars corretas): (1) build quebrava por completo sem `REDIS_URL` — `workers/connection.ts` lançava na importação do módulo; corrigido com `lazyConnect`. (2) o plano Vercel **Hobby rejeitou o deploy** por ter 3 cron jobs (2 deles a cada 5 min) — o plano permite no máximo 2, ambos diários; corrigido consolidando `/api/drive/poll` + `/api/queue/process` num único `/api/cron/daily`, rodando 1x/dia junto com `/api/drive/renew-channel`. **Cadência de ingestão/fila cai de 5 min para até 24h** — decisão aceita explicitamente pelo usuário; reverter é só editar `vercel.ts` ao migrar para o plano Pro.
+- **Env vars de produção configuradas** (`vercel env add`, environment Production): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (precisou `--type config` explícito — o CLI recusa por padrão nomes `NEXT_PUBLIC_*` que parecem credencial), `SUPABASE_SERVICE_ROLE_KEY`, `REDIS_URL`, `CRON_SECRET`, `CREATOMATE_WEBHOOK_SECRET`, `CREATOMATE_API_KEY`, `CREATOMATE_TEMPLATE_ID`, `CREATOMATE_LAYER_HEADLINE`/`PHOTO_1`/`PHOTO_2`/`BADGE`, `ZERNIO_API_KEY`, `ZERNIO_INSTAGRAM_ACCOUNT_ID`, `PUBLIC_BASE_URL` (`https://puzzlerecordsnew.vercel.app`).
+- **Deploy de produção verificado ao vivo**: `/` → 307 (redirect), `/login` → 200, `/dashboard` → 307 (guard de auth funcionando), `/api/queue/process` → 401 sem token (fail-closed correto). App está de pé e servindo corretamente.
+- **Env vars faltando em produção**: `OPENROUTER_API_KEY` (nunca fornecida — bloqueia a Fase 2 sozinha), Google Drive (`GOOGLE_SERVICE_ACCOUNT_EMAIL`/`GOOGLE_PRIVATE_KEY`/`GOOGLE_DRIVE_FOLDER_ID`/`GOOGLE_DRIVE_WEBHOOK_TOKEN`) e Telegram (`TELEGRAM_BOT_TOKEN`/`TELEGRAM_WEBHOOK_SECRET`/`TELEGRAM_ALLOWED_CHAT_IDS`) — a Fase 1 tinha essas pendências marcadas como concluídas num registro anterior deste arquivo, mas nenhuma dessas credenciais existe em `.env.local` hoje; **precisa ser reconfirmado com o usuário** antes de assumir que a ingestão real (Drive/Telegram) funciona em produção.
+- **Achado paralelo, não destrutivo**: ao rodar `vercel link`, o próprio Vercel (via GitHub App) criou um segundo projeto vazio chamado `puzzle-records-new` (com hífen, distinto do `puzzle_records_new` com underscore) só porque a PR existia. Ele buildou com sucesso mas está vazio/não usado — seguro de ignorar ou apagar depois, não afeta nada em produção.
 
 ## Checklist de QA manual end-to-end (Task 13)
 
-Executar depois que todas as credenciais reais estiverem configuradas:
+Executar depois que as env vars restantes estiverem configuradas em produção:
 
-1. Aplicar as 3 migrations pendentes no Supabase Studio (`audit_log`, `pipeline_items`, colunas novas desta fase — `00000000000003_add_caption_render_publish.sql`).
-2. Preencher `OPENROUTER_API_KEY` real.
-3. Criar o template no Creatomate, preencher `CREATOMATE_API_KEY`/`CREATOMATE_TEMPLATE_ID`/nomes de camada, rodar `npm run creatomate:smoke-test` e confirmar sucesso.
-4. Deixar `ZERNIO_API_KEY` **vazio** propositalmente nesta primeira rodada (usa o mock) — subir uma foto de teste pelo Telegram e acompanhar no Kanban: `recebido` → `legenda` → `renderizando` → `publicado`, checando os logs do endpoint `/api/queue/process` e o console (`[zernio:mock] publicaria...`).
-5. Confirmar no Supabase que `audit_log` recebeu uma linha para cada transição de status do item de teste.
-6. Assim que o usuário fornecer a documentação real do Zernio: implementar `RealZernioClient` (fora deste plano), preencher `ZERNIO_API_KEY`/`ZERNIO_API_BASE_URL`/`ZERNIO_INSTAGRAM_ACCOUNT_ID`, repetir o teste de ponta a ponta e confirmar que o post aparece de verdade no Instagram.
+1. Confirmar as 3 migrations aplicadas no Supabase real (usuário confirmou em 2026-09-17 — vale checar visualmente no Supabase Studio).
+2. Configurar `OPENROUTER_API_KEY` em produção (única credencial que falta para a Fase 2 rodar).
+3. Reconfirmar se as credenciais de Google Drive/Telegram (Fase 1) realmente estão configuradas em produção — não encontradas em nenhum `.env.local` local nesta rodada.
+4. Decidir se `ZERNIO_API_KEY` fica com a conta `@althorya.ai` (teste) ou é trocada por uma conta real da Puzzle Records antes do primeiro post de verdade.
+5. Subir uma foto de teste pelo Telegram (ou inserir manualmente um `pipeline_items` de teste, já que a ingestão real está sob suspeita) e acompanhar no Kanban: `recebido` → `legenda` → `renderizando` → `publicado`, checando os logs do `/api/cron/daily` e `/api/queue/process`.
+6. Confirmar no Supabase que `audit_log` recebeu uma linha para cada transição de status do item de teste.
+7. Confirmar que o post apareceu de verdade na conta Instagram configurada.
