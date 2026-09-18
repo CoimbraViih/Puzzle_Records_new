@@ -34,7 +34,7 @@ export async function processRenderJob({ pipelineItemId }: RenderJobData): Promi
     const webhookUrl = `${requireEnv("PUBLIC_BASE_URL")}/api/creatomate/webhook?token=${requireEnv("CREATOMATE_WEBHOOK_SECRET")}&item=${pipelineItemId}`;
     const render = await startCreatomateRender(modifications, webhookUrl);
 
-    const { error: updateError } = await supabase
+    const { data: updated, error: updateError } = await supabase
       .from("pipeline_items")
       .update({
         status: "renderizando",
@@ -42,8 +42,17 @@ export async function processRenderJob({ pipelineItemId }: RenderJobData): Promi
         render_started_at: new Date().toISOString(),
         render_error: null,
       })
-      .eq("id", pipelineItemId);
+      .eq("id", pipelineItemId)
+      // compare-and-swap: só transiciona se ainda estiver no estado esperado
+      .eq("status", "legenda")
+      .select("id");
     if (updateError) throw updateError;
+    if (!updated || updated.length === 0) {
+      console.warn(
+        `[render] item ${pipelineItemId} já não estava mais em "legenda" — outro processo já avançou; abortando sem duplicar.`,
+      );
+      return;
+    }
 
     await logSystemAuditEvent({
       action: "status_changed",

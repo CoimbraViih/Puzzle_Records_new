@@ -17,6 +17,9 @@ export interface PipelineItemMediaRef {
 
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1h — suficiente para o Creatomate buscar o arquivo durante o render
 
+/** Teto de tamanho para o download do Drive (vídeo social cabe folgado em 50MB). */
+const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
+
 /**
  * Garante que o arquivo do item esteja no bucket raw-media e retorna uma URL
  * assinada, buscável pelo Creatomate. Itens do Drive ainda não têm o binário
@@ -34,6 +37,23 @@ export async function resolveRenderableMediaUrl(item: PipelineItemMediaRef): Pro
     }
 
     const drive = getDriveClient();
+
+    // O download abaixo bufferiza o arquivo inteiro na memória da function.
+    // Antes de pagar esse custo, conferimos o tamanho por uma chamada barata
+    // só de metadados e recusamos arquivos grandes demais. (Um streaming
+    // Drive -> Storage de verdade fica para uma iteração futura.)
+    const metadata = await drive.files.get({
+      fileId: item.drive_file_id,
+      fields: "size",
+      supportsAllDrives: true,
+    });
+    const sizeBytes = Number(metadata.data.size ?? 0);
+    if (sizeBytes > MAX_MEDIA_BYTES) {
+      throw new Error(
+        `item ${item.id}: arquivo do Drive tem ${Math.round(sizeBytes / 1024 / 1024)}MB, acima do limite de ${MAX_MEDIA_BYTES / 1024 / 1024}MB para download em memória`,
+      );
+    }
+
     const response = await drive.files.get(
       { fileId: item.drive_file_id, alt: "media", supportsAllDrives: true },
       { responseType: "arraybuffer" },
