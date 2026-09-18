@@ -47,6 +47,7 @@ export async function processPublishJob({ pipelineItemId }: PublishJobData): Pro
       instagramAccountId: process.env.ZERNIO_INSTAGRAM_ACCOUNT_ID ?? "",
       videoUrl: item.render_url,
       captionText: `${item.caption_headline}\n\n${item.caption_body}`,
+      idempotencyKey: pipelineItemId,
     });
 
     const { data: updated, error: updateError } = await supabase

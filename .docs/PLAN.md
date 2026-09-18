@@ -110,7 +110,7 @@ Não foi atentado nesta versão. Pendência explícita registrada para uma itera
 **Status (2026-09-17)**: código implementado e commitado, cobrindo o núcleo de publicação e um MVP de dashboard (Início, Calendário, Analytics).
 
 **Entregáveis**:
-- [x] Interface `ZernioClient` (`lib/publishing/zernio-client.ts`) com `MockZernioClient` funcional (`lib/publishing/mock-zernio-client.ts`, loga `[zernio:mock] publicaria...` no console e simula sucesso) e `RealZernioClient` como **stub fail-closed**: lança erro explícito em vez de adivinhar endpoints, apontando para a documentação real ainda não recebida. `getZernioClient()` escolhe a implementação real só se `ZERNIO_API_KEY` estiver preenchida.
+- [x] Interface `ZernioClient` (`lib/publishing/zernio-client.ts`) com `MockZernioClient` funcional (`lib/publishing/mock-zernio-client.ts`, loga `[zernio:mock] publicaria...` no console e simula sucesso) e `RealZernioClient` (`lib/publishing/real-zernio-client.ts`) implementado contra a API real (`POST /v1/posts` com `publishNow: true` e `x-request-id` = `pipelineItemId` para idempotência, `GET /v1/analytics?postId=` para métricas). `getZernioClient()` escolhe a implementação real só se `ZERNIO_API_KEY` estiver preenchida — como a chave real já foi fornecida pelo usuário, o pipeline agora publica de verdade em vez de usar o mock.
 - [x] Processor de publicação imediata (`lib/publishing/publish-post.ts`) com error-handling robusto: grava `publish_error` em caso de falha, registra `publish_post_id`/`publish_permalink`/`published_at` em caso de sucesso, e emite evento de auditoria (`logSystemAuditEvent`) a cada transição de status.
 - [x] Kanban (`/dashboard/kanban`) agora exibe legenda, link de render, link de publicação e erros por etapa.
 - [x] Dashboard Início (`/dashboard`) com contagem de itens por status.
@@ -118,21 +118,22 @@ Não foi atentado nesta versão. Pendência explícita registrada para uma itera
 - [x] Conversão de fuso horário UTC → America/Sao_Paulo: utilitário criado na Fase 3 e usado no calendário/analytics (não verificada contra timestamps reais do Zernio em produção ainda).
 
 **Pendências**:
-1. **Publicação real no Instagram ainda não está ativa** — depende de `RealZernioClient` deixar de ser stub, o que só pode acontecer depois que o usuário fornecer a documentação real da API do Zernio (fora do escopo deste plano). Até lá, o pipeline sempre usa o mock quando `ZERNIO_API_KEY` está vazio (comportamento intencional, documentado em `.env.example`).
+1. ~~Publicação real no Instagram ainda não está ativa~~ — `RealZernioClient` implementado (ver acima) e `ZERNIO_API_KEY` já configurada em `.env.local`. Falta apenas preencher `ZERNIO_INSTAGRAM_ACCOUNT_ID` (accountId do Instagram no Zernio, distinto do `ZERNIO_API_KEY`) e validar de ponta a ponta com um post real (checklist de QA abaixo).
 2. **Relatórios/exportação e busca/filtros completos do dashboard** (item do PRD Fase 5) **ficam fora deste plano** — não implementados; pendência para uma iteração futura.
-3. A migration `supabase/migrations/00000000000003_add_caption_render_publish.sql` ainda precisa ser aplicada manualmente no Supabase Studio, junto das migrations 1 (`audit_log`) e 2 (`pipeline_items`) já pendentes desde as Fases 0/1.
+3. Migrations já aplicadas pelo usuário no Supabase real (confirmado 2026-09-17).
 4. **Cadência de cron compartilhada com a pendência #7 da Fase 1**: o novo cron `/api/queue/process` (`*/5 * * * *`, drena a fila de legenda/render/publicação) tem exatamente o mesmo risco não verificado já registrado para `/api/drive/poll` — o plano Vercel Hobby confirmado só roda crons diários, então nenhum dos dois crons de 5 em 5 minutos tem cadência garantida até a conta ser migrada para o plano Pro (ou até isso ser testado no primeiro deploy real). Resolver os dois juntos quando a decisão de projeto/plano Vercel for tomada.
 
 **Critério de pronto**: post aprovado é publicado/agendado corretamente no Instagram, horários exibidos batem com America/Sao_Paulo, e o dashboard mostra analytics reais vindos do Zernio. *(Código e mock funcionando ✅; publicação real no Instagram, template do Creatomate e gate de aprovação continuam pendentes — ver checklist de QA abaixo.)*
 
 ## Pendências gerais registradas ao fechar as Fases 2/3/5
 
-1. **Gate de aprovação (Fase 4) foi pulado por decisão do usuário** nesta versão de teste — precisa ser implementado antes de qualquer uso real em produção com pessoas reais envolvidas (ver seção Fase 4 acima).
-2. **`RealZernioClient` continua como stub** até a API real do Zernio ser documentada pelo usuário — publicação real no Instagram só ativa depois disso.
-3. **Template do Creatomate precisa ser criado manualmente** no editor visual antes que o smoke test (`npm run creatomate:smoke-test`) possa rodar contra a API de verdade.
+1. **Gate de aprovação (Fase 4) foi pulado por decisão do usuário** nesta versão de teste — precisa ser implementado antes de qualquer uso real em produção com pessoas reais envolvidas (ver seção Fase 4 acima). **Isso continua valendo mesmo com `RealZernioClient` implementado**: o pipeline publica de verdade no Instagram sem revisão humana.
+2. ~~`RealZernioClient` continua como stub~~ — implementado (`lib/publishing/real-zernio-client.ts`) usando a documentação pública da API (base `https://zernio.com/api`, `POST /v1/posts`, `GET /v1/analytics`). Falta só `ZERNIO_INSTAGRAM_ACCOUNT_ID` no `.env.local` e validação end-to-end com um post real.
+3. **Template do Creatomate está sendo criado pelo usuário** no editor visual — falta preencher `CREATOMATE_LAYER_HEADLINE`/`CREATOMATE_LAYER_PHOTO_1`/`CREATOMATE_LAYER_PHOTO_2`/`CREATOMATE_LAYER_BADGE` em `.env.local` (hoje vazios) e então rodar `npm run creatomate:smoke-test` contra a API de verdade.
 4. **Relatórios/exportação e busca/filtros completos do dashboard** (Fase 5 do PRD) ficam fora deste plano — pendência futura.
-5. **Migration `00000000000003_add_caption_render_publish.sql`** ainda precisa ser aplicada manualmente no Supabase Studio, junto das migrations 1 e 2 já pendentes.
-6. **Cadência de cron do plano Vercel Hobby**: `/api/queue/process` soma-se a `/api/drive/poll` (pendência #7 da Fase 1) como cron de 5 em 5 minutos sem confirmação de que o plano contratado suporta essa cadência.
+5. Migrations aplicadas pelo usuário no Supabase real (confirmado 2026-09-17).
+6. **`REDIS_URL` e `OPENROUTER_API_KEY` ainda vazios em `.env.local`** — sem `REDIS_URL` (leitura/escrita) o BullMQ não enfileira nada e a Fase 2 não roda; sem `OPENROUTER_API_KEY` a geração de legenda falha em toda tentativa.
+7. **Cadência de cron do plano Vercel Hobby**: `/api/queue/process` soma-se a `/api/drive/poll` (pendência #7 da Fase 1) como cron de 5 em 5 minutos sem confirmação de que o plano contratado suporta essa cadência.
 
 ## Checklist de QA manual end-to-end (Task 13)
 
