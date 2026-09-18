@@ -2,7 +2,8 @@
 // validar uma troca de versão de template antes de ir para produção (regra
 // do CLAUDE.md: "nunca trocar a versão em produção sem rodar o smoke test
 // automático primeiro"). Uso: npm run creatomate:smoke-test
-import "dotenv/config";
+import { config } from "dotenv";
+config({ path: ".env.local" });
 import { startCreatomateRender } from "../lib/render/creatomate-client";
 import { buildCreatomateModifications } from "../lib/render/modifications";
 
