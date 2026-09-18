@@ -44,7 +44,7 @@ export function LoginForm() {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader>
-        <CardTitle>Puzzle Records</CardTitle>
+        <CardTitle className="text-2xl font-bold text-brand">Puzzle Records</CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">

@@ -52,7 +52,7 @@ export default async function ConfiguracoesPage() {
   return (
     <div className="space-y-8 p-6">
       <section>
-        <h1 className="text-lg font-semibold">Conexões</h1>
+        <h1 className="font-display text-xl font-bold">Conexões</h1>
         <p className="text-sm text-muted-foreground">
           Status das integrações externas. Credenciais são configuradas via variáveis de ambiente (Vercel) — esta
           tela reflete o estado atual e permite testar a conectividade.
@@ -78,7 +78,7 @@ export default async function ConfiguracoesPage() {
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold">API Keys</h2>
+        <h2 className="font-display text-xl font-bold">API Keys</h2>
         {apiKeysUnavailable && (
           <p className="mt-2 text-sm text-destructive">
             Tabela api_keys indisponível — aplique a migration 00000000000004 antes de usar esta seção.

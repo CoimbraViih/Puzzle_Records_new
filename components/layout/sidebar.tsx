@@ -19,7 +19,10 @@ export function Sidebar({ role }: { role: UserRole }) {
   const visibleItems = NAV_ITEMS.filter((item) => item.roles.includes(role));
 
   return (
-    <aside className="w-56 shrink-0 border-r bg-muted/20 p-4">
+    <aside className="w-56 shrink-0 border-r border-border bg-surface p-4">
+      <div className="mb-6 px-1">
+        <span className="font-display text-xl font-bold tracking-tight text-brand">Puzzle Records</span>
+      </div>
       <nav className="flex flex-col gap-1">
         {visibleItems.map((item) => {
           // "/dashboard" é caso especial: não deve ficar ativo para toda
@@ -34,8 +37,8 @@ export function Sidebar({ role }: { role: UserRole }) {
               key={item.href}
               href={item.href}
               className={cn(
-                "rounded-md px-3 py-2 text-sm font-medium hover:bg-muted",
-                isActive && "bg-muted"
+                "rounded-md px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted",
+                isActive && "bg-brand-soft font-semibold text-brand hover:bg-brand-soft"
               )}
             >
               {item.label}

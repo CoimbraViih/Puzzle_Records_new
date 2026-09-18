@@ -23,10 +23,10 @@ export function Topbar({ email }: { email: string }) {
   }
 
   return (
-    <header className="flex h-14 items-center justify-between border-b px-6">
-      <span className="text-sm font-medium">Puzzle Records</span>
+    <header className="flex h-14 items-center justify-between border-b border-border bg-surface px-6">
+      <span className="font-display text-base font-semibold tracking-tight">Painel operacional</span>
       <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground">{email}</span>
+        <span className="font-mono text-xs text-muted-foreground">{email}</span>
         <Button variant="outline" size="sm" onClick={handleLogout}>
           Sair
         </Button>

@@ -43,8 +43,8 @@ export function ConnectionCard({
           <span
             className={
               status === "connected"
-                ? "rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"
-                : "rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                ? "rounded-full bg-good-bg px-2 py-0.5 text-xs font-medium text-good"
+                : "rounded-full bg-neutral-bg px-2 py-0.5 text-xs font-medium text-muted-foreground"
             }
           >
             {STATUS_LABEL[status]}
@@ -62,7 +62,7 @@ export function ConnectionCard({
           <p className="text-xs text-muted-foreground">Configure as variáveis de ambiente para habilitar o teste.</p>
         )}
         {result && (
-          <p className={result.ok ? "text-xs text-green-700" : "text-xs text-destructive"}>{result.message}</p>
+          <p className={result.ok ? "text-xs text-good" : "text-xs text-critical"}>{result.message}</p>
         )}
       </CardContent>
     </Card>

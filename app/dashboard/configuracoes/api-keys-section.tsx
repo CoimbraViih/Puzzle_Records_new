@@ -55,9 +55,11 @@ export function ApiKeysSection({ keys, webhookUrl }: { keys: ApiKeyRow[]; webhoo
         {state.error && <p className="text-sm text-destructive">{state.error}</p>}
 
         {state.plaintext && (
-          <div className="rounded-md border border-yellow-300 bg-yellow-50 p-3 text-sm">
-            <p className="font-medium">Chave &quot;{state.name}&quot; criada. Copie agora — ela não será mostrada de novo:</p>
-            <code className="mt-2 block break-all rounded bg-background p-2 text-xs">{state.plaintext}</code>
+          <div className="rounded-md border border-warning bg-warning-bg p-3 text-sm">
+            <p className="font-medium text-warning">
+              Chave &quot;{state.name}&quot; criada. Copie agora — ela não será mostrada de novo:
+            </p>
+            <code className="mt-2 block break-all rounded bg-background p-2 font-mono text-xs">{state.plaintext}</code>
           </div>
         )}
 
