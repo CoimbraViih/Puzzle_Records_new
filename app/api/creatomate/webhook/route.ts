@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { requireEnv } from "@/lib/ingestion/cron-auth";
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 import { isHttpsUrl } from "@/lib/http/url-safety";
 import { publishQueue } from "@/workers/queues";
 import { triggerQueueDrain } from "@/lib/queue/trigger";
@@ -14,12 +14,6 @@ function safeCompare(a: string, b: string): boolean {
   const bufB = Buffer.from(b);
   if (bufA.length !== bufB.length) return false;
   return timingSafeEqual(bufA, bufB);
-}
-
-function getServiceRoleClient() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-    auth: { persistSession: false },
-  });
 }
 
 interface CreatomateWebhookPayload {
@@ -92,8 +86,14 @@ export async function POST(request: NextRequest) {
       .from("pipeline_items")
       .update({ render_url: payload.url, render_error: null })
       .eq("id", itemId)
-      // compare-and-swap: só aceita a URL enquanto o item ainda está renderizando
+      // compare-and-swap: só aceita a URL enquanto o item ainda está
+      // renderizando E ainda não tem render_url — sem o segundo `.is()`, uma
+      // entrega duplicada do mesmo webhook (Creatomate pode reenviar) casaria
+      // de novo com "renderizando" (status só muda quando o job de publish
+      // roda) e enfileiraria um SEGUNDO publishQueue.add() para o mesmo item,
+      // publicando duas vezes no Instagram.
       .eq("status", "renderizando")
+      .is("render_url", null)
       .select("id");
     if (updateError) {
       console.error("[creatomate/webhook] falha ao salvar render_url", updateError);
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     }
     if (!updated || updated.length === 0) {
       console.warn(
-        `[creatomate/webhook] item ${itemId} já não estava mais em "renderizando" — webhook duplicado/atrasado ignorado.`,
+        `[creatomate/webhook] item ${itemId} já não estava mais em "renderizando" (ou já tinha render_url) — webhook duplicado/atrasado ignorado.`,
       );
       return NextResponse.json({ ok: true });
     }

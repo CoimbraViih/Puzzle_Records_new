@@ -30,10 +30,18 @@ export async function drainQueue<T extends object>(
   const batchSize = options.batchSize ?? 20;
   const deadline = Date.now() + (options.timeBudgetMs ?? 60_000);
   let processed = 0;
+  // Um job que falhou e voltou para "waiting" com _drainAttempts incrementado
+  // não deve ser puxado de novo dentro desta MESMA invocação — o loop externo
+  // re-consulta "waiting" a cada iteração e pegaria o mesmo job de novo em
+  // milissegundos, esgotando MAX_DRAIN_ATTEMPTS numa rajada sem backoff em vez
+  // de espalhar as tentativas entre execuções do cron (5 min de intervalo).
+  const retriedThisRun = new Set<string>();
 
   while (Date.now() < deadline) {
     // Só "waiting": puxar "delayed" adiantaria jobs agendados de propósito.
-    const jobs = await queue.getJobs(["waiting"], 0, batchSize - 1);
+    const jobs = (await queue.getJobs(["waiting"], 0, batchSize - 1)).filter(
+      (job) => !job.id || !retriedThisRun.has(job.id),
+    );
     if (jobs.length === 0) break;
 
     for (const job of jobs) {
@@ -50,7 +58,8 @@ export async function drainQueue<T extends object>(
           await job.remove();
         } else {
           await job.updateData({ ...job.data, _drainAttempts: attempts + 1 } as T);
-          // job continua em "waiting" — será repescado no próximo drain.
+          // job continua em "waiting" — será repescado só no próximo drain.
+          if (job.id) retriedThisRun.add(job.id);
         }
         processed += 1;
       }

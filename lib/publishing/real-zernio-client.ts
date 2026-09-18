@@ -77,8 +77,24 @@ class RealZernioClient implements ZernioClient {
       throw new Error(`Zernio publish falhou (${response.status}): ${body}`);
     }
 
-    const payload = (await response.json()) as ZernioCreatePostResponse;
+    // Um 409 (idempotência por conteúdo em 24h) pode vir com corpo vazio —
+    // response.json() direto lançaria SyntaxError nesse caso. Parseamos como
+    // texto primeiro para diferenciar "sem corpo" de "JSON inválido" e dar um
+    // erro claro; retry é seguro de qualquer forma porque o x-request-id/
+    // idempotência do próprio Zernio impede duplicar o post.
+    const rawBody = await response.text();
+    let payload: ZernioCreatePostResponse;
+    try {
+      payload = JSON.parse(rawBody) as ZernioCreatePostResponse;
+    } catch {
+      throw new Error(
+        `Zernio publish retornou ${response.status} sem corpo JSON utilizável (corpo: ${rawBody.slice(0, 200)})`,
+      );
+    }
     const post = payload.existingPost ?? payload.post;
+    if (!post) {
+      throw new Error(`Zernio publish (${response.status}) não retornou nem "post" nem "existingPost": ${rawBody.slice(0, 200)}`);
+    }
     const instagramResult = post.platforms.find((p) => p.platform === "instagram");
 
     if (!instagramResult || instagramResult.status === "failed") {

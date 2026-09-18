@@ -1,14 +1,8 @@
-import { createClient } from "@supabase/supabase-js";
 import { requestCaptionFromOpenRouter } from "./openrouter-client";
 import { logSystemAuditEvent } from "@/lib/audit/log-system-event";
 import { renderQueue } from "@/workers/queues";
 import { triggerQueueDrain } from "@/lib/queue/trigger";
-
-function getServiceRoleClient() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-    auth: { persistSession: false },
-  });
-}
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
 export interface CaptionJobData {
   pipelineItemId: string;
@@ -69,9 +63,15 @@ export async function processCaptionJob({ pipelineItemId }: CaptionJobData): Pro
     triggerQueueDrain();
   } catch (err) {
     console.error(`[caption] falha ao gerar legenda para ${pipelineItemId}:`, err);
-    await supabase
+    const { error: errorUpdateError } = await supabase
       .from("pipeline_items")
       .update({ caption_error: err instanceof Error ? err.message : String(err) })
       .eq("id", pipelineItemId);
+    if (errorUpdateError) {
+      console.error(`[caption] falha ao registrar caption_error para ${pipelineItemId}:`, errorUpdateError);
+    }
+    // Relança para o drainQueue decidir retry vs. descarte (MAX_DRAIN_ATTEMPTS)
+    // em vez de tratar toda falha como definitiva já na primeira tentativa.
+    throw err;
   }
 }

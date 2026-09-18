@@ -1,15 +1,9 @@
-import { createClient } from "@supabase/supabase-js";
 import { requireEnv } from "@/lib/ingestion/cron-auth";
 import { resolveRenderableMediaUrl } from "./media";
 import { startCreatomateRender } from "./creatomate-client";
 import { buildCreatomateModifications } from "./modifications";
 import { logSystemAuditEvent } from "@/lib/audit/log-system-event";
-
-function getServiceRoleClient() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-    auth: { persistSession: false },
-  });
-}
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
 export interface RenderJobData {
   pipelineItemId: string;
@@ -25,6 +19,7 @@ export async function processRenderJob({ pipelineItemId }: RenderJobData): Promi
   if (error) throw error;
   if (!item || item.status !== "legenda" || !item.caption_headline || !item.caption_body) return;
 
+  let render: Awaited<ReturnType<typeof startCreatomateRender>>;
   try {
     const mediaUrl = await resolveRenderableMediaUrl(item);
     const modifications = buildCreatomateModifications(
@@ -32,8 +27,22 @@ export async function processRenderJob({ pipelineItemId }: RenderJobData): Promi
       { photo1Url: mediaUrl },
     );
     const webhookUrl = `${requireEnv("PUBLIC_BASE_URL")}/api/creatomate/webhook?token=${requireEnv("CREATOMATE_WEBHOOK_SECRET")}&item=${pipelineItemId}`;
-    const render = await startCreatomateRender(modifications, webhookUrl);
+    render = await startCreatomateRender(modifications, webhookUrl);
+  } catch (err) {
+    // Nada foi disparado no Creatomate ainda — seguro deixar o drainQueue
+    // re-tentar (rethrow) sem risco de duplicar um render.
+    console.error(`[render] falha ao iniciar render para ${pipelineItemId}:`, err);
+    const { error: errorUpdateError } = await supabase
+      .from("pipeline_items")
+      .update({ render_error: err instanceof Error ? err.message : String(err) })
+      .eq("id", pipelineItemId);
+    if (errorUpdateError) {
+      console.error(`[render] falha ao registrar render_error para ${pipelineItemId}:`, errorUpdateError);
+    }
+    throw err;
+  }
 
+  try {
     const { data: updated, error: updateError } = await supabase
       .from("pipeline_items")
       .update({
@@ -60,10 +69,20 @@ export async function processRenderJob({ pipelineItemId }: RenderJobData): Promi
       metadata: { from: "legenda", to: "renderizando" },
     });
   } catch (err) {
-    console.error(`[render] falha ao iniciar render para ${pipelineItemId}:`, err);
+    // O render JÁ foi disparado no Creatomate (render.id existe) — nunca
+    // relançar aqui, ou um retry chamaria startCreatomateRender de novo e
+    // duplicaria o render (e, adiante, a publicação). Só registra para
+    // intervenção manual; o webhook de conclusão pode chegar e não achar o
+    // item em "renderizando" (ver comentário em app/api/creatomate/webhook).
+    console.error(
+      `[render] render ${render.id} iniciado no Creatomate, mas falhou ao persistir no Supabase para ${pipelineItemId}:`,
+      err,
+    );
     const { error: errorUpdateError } = await supabase
       .from("pipeline_items")
-      .update({ render_error: err instanceof Error ? err.message : String(err) })
+      .update({
+        render_error: `render ${render.id} iniciado no Creatomate mas não persistido: ${err instanceof Error ? err.message : String(err)}`,
+      })
       .eq("id", pipelineItemId);
     if (errorUpdateError) {
       console.error(`[render] falha ao registrar render_error para ${pipelineItemId}:`, errorUpdateError);

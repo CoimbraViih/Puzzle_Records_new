@@ -1,13 +1,7 @@
 // lib/publishing/publish-post.ts
-import { createClient } from "@supabase/supabase-js";
 import { getZernioClient } from "./zernio-client";
 import { logSystemAuditEvent } from "@/lib/audit/log-system-event";
-
-function getServiceRoleClient() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-    auth: { persistSession: false },
-  });
-}
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
 export interface PublishJobData {
   pipelineItemId: string;
@@ -41,15 +35,31 @@ export async function processPublishJob({ pipelineItemId }: PublishJobData): Pro
     return;
   }
 
+  let result: Awaited<ReturnType<ReturnType<typeof getZernioClient>["publish"]>>;
   try {
     const client = getZernioClient();
-    const result = await client.publish({
+    result = await client.publish({
       instagramAccountId: process.env.ZERNIO_INSTAGRAM_ACCOUNT_ID ?? "",
       videoUrl: item.render_url,
       captionText: `${item.caption_headline}\n\n${item.caption_body}`,
       idempotencyKey: pipelineItemId,
     });
+  } catch (err) {
+    // Nada foi publicado ainda — seguro deixar o drainQueue re-tentar
+    // (rethrow). Se já tivesse sido publicado, relançar aqui faria um retry
+    // chamar client.publish() de novo e postar duas vezes no Instagram.
+    console.error(`[publish] falha ao publicar ${pipelineItemId}:`, err);
+    const { error: errorUpdateError } = await supabase
+      .from("pipeline_items")
+      .update({ publish_error: err instanceof Error ? err.message : String(err) })
+      .eq("id", pipelineItemId);
+    if (errorUpdateError) {
+      console.error(`[publish] falha ao registrar publish_error para ${pipelineItemId}:`, errorUpdateError);
+    }
+    throw err;
+  }
 
+  try {
     const { data: updated, error: updateError } = await supabase
       .from("pipeline_items")
       .update({
@@ -79,10 +89,18 @@ export async function processPublishJob({ pipelineItemId }: PublishJobData): Pro
       metadata: { from: "renderizando", to: "publicado", postId: result.postId },
     });
   } catch (err) {
-    console.error(`[publish] falha ao publicar ${pipelineItemId}:`, err);
+    // O post JÁ ESTÁ NO AR no Instagram (client.publish() retornou sucesso) —
+    // nunca relançar aqui, ou um retry chamaria client.publish() de novo e
+    // publicaria duas vezes. Só registra para intervenção manual.
+    console.error(
+      `[publish] item ${pipelineItemId} JÁ FOI PUBLICADO no Zernio (post ${result.postId}), mas falhou ao persistir no Supabase:`,
+      err,
+    );
     const { error: errorUpdateError } = await supabase
       .from("pipeline_items")
-      .update({ publish_error: err instanceof Error ? err.message : String(err) })
+      .update({
+        publish_error: `publicado no Zernio (post ${result.postId}) mas não persistido: ${err instanceof Error ? err.message : String(err)}`,
+      })
       .eq("id", pipelineItemId);
     if (errorUpdateError) {
       console.error(`[publish] falha ao registrar publish_error para ${pipelineItemId}:`, errorUpdateError);

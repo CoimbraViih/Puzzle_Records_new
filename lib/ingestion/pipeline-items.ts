@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
 export type PipelineItemOrigin = "drive" | "telegram";
 
@@ -37,14 +37,6 @@ export function buildPipelineItemPayload(input: BuildPipelineItemInput): Pipelin
     storage_path: input.storagePath ?? null,
     metadata: input.metadata ?? {},
   };
-}
-
-function getServiceRoleClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } },
-  );
 }
 
 /**

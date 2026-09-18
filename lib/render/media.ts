@@ -1,11 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
 import { getDriveClient } from "@/lib/ingestion/google-drive";
-
-function getServiceRoleClient() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-    auth: { persistSession: false },
-  });
-}
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
 export interface PipelineItemMediaRef {
   id: string;
@@ -47,7 +41,13 @@ export async function resolveRenderableMediaUrl(item: PipelineItemMediaRef): Pro
       fields: "size",
       supportsAllDrives: true,
     });
-    const sizeBytes = Number(metadata.data.size ?? 0);
+    // Falha fechada se o Drive não informar o tamanho: um `?? 0` aqui deixaria
+    // arquivos sem `size` na resposta (acontece para alguns tipos/edge cases)
+    // passar batido pelo guard de tamanho e ir direto pro buffer em memória.
+    if (metadata.data.size == null) {
+      throw new Error(`item ${item.id}: Drive não informou o tamanho do arquivo — recusando por segurança`);
+    }
+    const sizeBytes = Number(metadata.data.size);
     if (sizeBytes > MAX_MEDIA_BYTES) {
       throw new Error(
         `item ${item.id}: arquivo do Drive tem ${Math.round(sizeBytes / 1024 / 1024)}MB, acima do limite de ${MAX_MEDIA_BYTES / 1024 / 1024}MB para download em memória`,

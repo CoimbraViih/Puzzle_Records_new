@@ -1,9 +1,9 @@
 import { Bot, webhookCallback, type Context } from "grammy";
-import { createClient } from "@supabase/supabase-js";
 import { upsertPipelineItem } from "./pipeline-items";
 import { requireEnv } from "./cron-auth";
 import { captionQueue } from "@/workers/queues";
 import { triggerQueueDrain } from "@/lib/queue/trigger";
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
 interface ExtractedMedia {
   fileId: string;
@@ -31,12 +31,6 @@ export function extractMediaFromMessage(message: Context["message"]): ExtractedM
   }
 
   return null;
-}
-
-function getServiceRoleClient() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-    auth: { persistSession: false },
-  });
 }
 
 // Allowlist de chat/user IDs do Telegram autorizados a usar o bot. Sem essa
