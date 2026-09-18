@@ -29,8 +29,13 @@ export async function startCreatomateRender(
   });
 
   if (!response.ok) {
+    // O corpo bruto fica só no log do servidor: ele pode ecoar o payload
+    // enviado (inclusive o webhook_url, que carrega o token do webhook) e a
+    // mensagem do erro vai parar em render_error, exibido no Kanban para
+    // qualquer usuário de equipe_conteudo.
     const body = await response.text();
-    throw new Error(`Creatomate render falhou (${response.status}): ${body}`);
+    console.error(`[creatomate] render request falhou (${response.status}):`, body);
+    throw new Error(`Creatomate render falhou com status ${response.status}`);
   }
 
   const payload = (await response.json()) as CreatomateRenderResult[];
