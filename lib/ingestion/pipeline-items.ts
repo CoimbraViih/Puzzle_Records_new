@@ -1,6 +1,6 @@
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
-export type PipelineItemOrigin = "drive" | "telegram";
+export type PipelineItemOrigin = "drive" | "telegram" | "n8n";
 
 export interface BuildPipelineItemInput {
   origin: PipelineItemOrigin;

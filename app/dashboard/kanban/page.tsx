@@ -11,6 +11,12 @@ const STATUS_LABELS: Record<string, string> = {
   publicado: "Publicado",
 };
 
+const ORIGIN_LABELS: Record<string, string> = {
+  drive: "Drive",
+  telegram: "Telegram",
+  n8n: "n8n",
+};
+
 export default async function KanbanPage() {
   const grouped = await getPipelineItemsGroupedByStatus();
 
@@ -30,7 +36,7 @@ export default async function KanbanPage() {
               <div key={item.id} className="rounded-md border bg-background p-2 text-sm">
                 <p className="font-medium">{item.caption_headline ?? item.title ?? "(sem título)"}</p>
                 <p className="text-xs text-muted-foreground">
-                  {item.origin === "drive" ? "Drive" : "Telegram"} · {item.author ?? "autor desconhecido"}
+                  {ORIGIN_LABELS[item.origin] ?? item.origin} · {item.author ?? "autor desconhecido"}
                 </p>
                 {item.render_url && (
                   <a href={item.render_url} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-blue-600 underline">

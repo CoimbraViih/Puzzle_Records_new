@@ -41,4 +41,20 @@ describe("buildPipelineItemPayload", () => {
     expect(payload.storage_path).toBe("telegram/AgADtelegram123.mp4");
     expect(payload.drive_file_id).toBeNull();
   });
+
+  it("monta o payload de um item vindo do n8n", () => {
+    const payload = buildPipelineItemPayload({
+      origin: "n8n",
+      externalId: "n8n-run-42",
+      title: "Gancho vindo do n8n",
+      author: "workflow: captação-automatica",
+      mimeType: "image/jpeg",
+      storagePath: "n8n/n8n-run-42.jpg",
+      metadata: { apiKeyId: "11111111-1111-1111-1111-111111111111" },
+    });
+
+    expect(payload.origin).toBe("n8n");
+    expect(payload.storage_path).toBe("n8n/n8n-run-42.jpg");
+    expect(payload.drive_file_id).toBeNull();
+  });
 });
