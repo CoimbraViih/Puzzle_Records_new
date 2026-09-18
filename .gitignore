@@ -32,6 +32,11 @@ next-env.d.ts
 
 # local Claude Code configuration/skills tree (must never be committed)
 .claude/
+.agents/
+skills-lock.json
 
 # Supabase CLI local cache
 supabase/.temp/
+
+# external SDK reference clone (not part of the app, own git repo)
+typescript-sdk/

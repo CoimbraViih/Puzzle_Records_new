@@ -21,6 +21,7 @@ export default defineConfig({
       ".next/**",
       ".claude/**",
       ".superpowers/**",
+      "typescript-sdk/**",
     ],
   },
 });
