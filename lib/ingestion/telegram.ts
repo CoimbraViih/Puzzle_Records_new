@@ -1,7 +1,9 @@
 import { Bot, webhookCallback, type Context } from "grammy";
-import { createClient } from "@supabase/supabase-js";
 import { upsertPipelineItem } from "./pipeline-items";
 import { requireEnv } from "./cron-auth";
+import { captionQueue } from "@/workers/queues";
+import { triggerQueueDrain } from "@/lib/queue/trigger";
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
 interface ExtractedMedia {
   fileId: string;
@@ -29,12 +31,6 @@ export function extractMediaFromMessage(message: Context["message"]): ExtractedM
   }
 
   return null;
-}
-
-function getServiceRoleClient() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-    auth: { persistSession: false },
-  });
 }
 
 // Allowlist de chat/user IDs do Telegram autorizados a usar o bot. Sem essa
@@ -123,7 +119,7 @@ export function createTelegramBot() {
 
     const author = ctx.from?.username ? `@${ctx.from.username}` : String(ctx.from?.id ?? "desconhecido");
 
-    await upsertPipelineItem({
+    const result = await upsertPipelineItem({
       origin: "telegram",
       externalId: media.fileUniqueId,
       title: media.caption,
@@ -132,6 +128,11 @@ export function createTelegramBot() {
       storagePath,
       metadata: { chatId: ctx.chat?.id },
     });
+
+    if (result) {
+      await captionQueue.add("caption", { pipelineItemId: result.id });
+      triggerQueueDrain();
+    }
 
     await ctx.reply("Recebido! Já apareceu no Kanban em 'recebido'.");
   });

@@ -1,6 +1,8 @@
 import { google, type drive_v3 } from "googleapis";
-import { createClient } from "@supabase/supabase-js";
 import { upsertPipelineItem } from "./pipeline-items";
+import { captionQueue } from "@/workers/queues";
+import { triggerQueueDrain } from "@/lib/queue/trigger";
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
 type DriveChange = {
   fileId?: string | null;
@@ -14,12 +16,6 @@ export function isRelevantDriveChange(change: DriveChange, watchedFolderId: stri
   if (!file || file.trashed) return false;
   if (!file.mimeType || !(file.mimeType.startsWith("image/") || file.mimeType.startsWith("video/"))) return false;
   return (file.parents ?? []).includes(watchedFolderId);
-}
-
-function getServiceRoleClient() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-    auth: { persistSession: false },
-  });
 }
 
 export function getDriveClient() {
@@ -88,7 +84,7 @@ export async function syncDriveChanges() {
     for (const change of res.data.changes ?? []) {
       if (!isRelevantDriveChange(change, folderId)) continue;
       const file = change.file!;
-      await upsertPipelineItem({
+      const result = await upsertPipelineItem({
         origin: "drive",
         externalId: file.id!,
         title: file.name ?? null,
@@ -97,6 +93,10 @@ export async function syncDriveChanges() {
         driveFileId: file.id!,
         metadata: {},
       });
+      if (result) {
+        await captionQueue.add("caption", { pipelineItemId: result.id });
+        triggerQueueDrain();
+      }
       processed += 1;
     }
 

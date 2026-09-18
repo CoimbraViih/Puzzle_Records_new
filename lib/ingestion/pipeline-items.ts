@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
 export type PipelineItemOrigin = "drive" | "telegram";
 
@@ -39,14 +39,6 @@ export function buildPipelineItemPayload(input: BuildPipelineItemInput): Pipelin
   };
 }
 
-function getServiceRoleClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } },
-  );
-}
-
 /**
  * Idempotente: se (origin, external_id) já existe, não faz nada e retorna null.
  * Cobre o caso de webhook + polling processarem o mesmo arquivo.
@@ -72,6 +64,14 @@ export interface PipelineItemRow {
   title: string | null;
   author: string | null;
   created_at: string;
+  caption_headline: string | null;
+  caption_error: string | null;
+  render_url: string | null;
+  render_error: string | null;
+  published_at: string | null;
+  publish_post_id: string | null;
+  publish_permalink: string | null;
+  publish_error: string | null;
 }
 
 const PIPELINE_STATUSES = [
@@ -97,7 +97,9 @@ export async function getPipelineItemsGroupedByStatus() {
   const supabase = getServiceRoleClient();
   const { data, error } = await supabase
     .from("pipeline_items")
-    .select("id, origin, status, title, author, created_at")
+    .select(
+      "id, origin, status, title, author, created_at, caption_headline, caption_error, render_url, render_error, published_at, publish_post_id, publish_permalink, publish_error",
+    )
     .order("created_at", { ascending: false });
 
   if (error) throw error;

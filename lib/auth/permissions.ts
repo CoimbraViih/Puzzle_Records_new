@@ -14,6 +14,8 @@ const ROUTE_PERMISSIONS: RoutePermission[] = [
   { prefix: "/dashboard/configuracoes", roles: ["admin"] },
   { prefix: "/dashboard/aprovacoes", roles: ["editorial", "admin"] },
   { prefix: "/dashboard/kanban", roles: ["equipe_conteudo", "editorial", "admin"] },
+  { prefix: "/dashboard/calendario", roles: ["editorial", "admin"] },
+  { prefix: "/dashboard/analytics", roles: ["editorial", "admin"] },
   { prefix: "/dashboard", roles: ["equipe_conteudo", "editorial", "admin"] },
 ];
 
