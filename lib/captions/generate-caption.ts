@@ -38,7 +38,7 @@ export async function processCaptionJob({ pipelineItemId }: CaptionJobData): Pro
       origin: item.origin,
     });
 
-    const { error: updateError } = await supabase
+    const { data: updated, error: updateError } = await supabase
       .from("pipeline_items")
       .update({
         status: "legenda",
@@ -47,8 +47,17 @@ export async function processCaptionJob({ pipelineItemId }: CaptionJobData): Pro
         caption_generated_at: new Date().toISOString(),
         caption_error: null,
       })
-      .eq("id", pipelineItemId);
+      .eq("id", pipelineItemId)
+      // compare-and-swap: só transiciona se ainda estiver no estado esperado
+      .eq("status", "recebido")
+      .select("id");
     if (updateError) throw updateError;
+    if (!updated || updated.length === 0) {
+      console.warn(
+        `[caption] item ${pipelineItemId} já não estava mais em "recebido" — outro processo já avançou; abortando sem duplicar.`,
+      );
+      return;
+    }
 
     await logSystemAuditEvent({
       action: "status_changed",
