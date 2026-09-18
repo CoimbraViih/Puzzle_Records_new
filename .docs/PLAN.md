@@ -148,3 +148,15 @@ Executar depois que as env vars restantes estiverem configuradas em produção:
 5. Subir uma foto de teste pelo Telegram (ou inserir manualmente um `pipeline_items` de teste, já que a ingestão real está sob suspeita) e acompanhar no Kanban: `recebido` → `legenda` → `renderizando` → `publicado`, checando os logs do `/api/cron/daily` e `/api/queue/process`.
 6. Confirmar no Supabase que `audit_log` recebeu uma linha para cada transição de status do item de teste.
 7. Confirmar que o post apareceu de verdade na conta Instagram configurada.
+
+## Configurações — Conexões, API Keys e webhook n8n (2026-09-18)
+
+**Status**: implementado — view `/dashboard/configuracoes` (admin-only) com duas seções:
+- **Conexões**: 6 cards (Drive, Telegram, OpenRouter, Creatomate, Zernio, n8n) refletindo o estado real via presença de env vars, com botão "Testar conexão" fazendo uma chamada leve real a cada API (exceto n8n, que não tem credencial de saída).
+- **API Keys**: tela para criar/listar/revogar chaves (tabela `api_keys`, hash SHA-256, texto puro exibido uma única vez na criação) — usadas para autenticar chamadas recebidas de automações externas.
+
+**Novo canal de ingestão**: `app/api/n8n/webhook/route.ts` — endpoint genérico autenticado por API key (header `Authorization: Bearer`), espelhando o padrão do Telegram (baixa a mídia de `mediaUrl`, salva no bucket `raw-media`, cria `pipeline_items` em "recebido" com `origin: "n8n"`, enfileira a geração de legenda). `pipeline_items.origin` foi ampliado para aceitar `'n8n'` via `supabase/migrations/00000000000004_add_api_keys_and_n8n_origin.sql`.
+
+**Pendência manual**: aplicar `supabase/migrations/00000000000004_add_api_keys_and_n8n_origin.sql` no projeto Supabase real (mesmo processo manual via SQL Editor das migrations anteriores — sem acesso à connection string direta do Postgres para automatizar via CLI). Live end-to-end QA of the n8n webhook against real production Supabase/Redis was deliberately deferred (not run in this implementation pass) because there is no local/staging environment separate from production — the `.env.local` file points to the same shared production Redis queue and Supabase project as the live Vercel deployment. QA risk is low (the pipeline stalls at caption generation without `OPENROUTER_API_KEY`, so it cannot cascade to a real Instagram publish), but a stray test `pipeline_items` row would still appear in the real Kanban board; this validation should be done manually by the user with a real API key when convenient.
+
+**Fora de escopo desta rodada**: o tema visual completo do `Design.md` (cores de marca magenta, tipografia Barlow Condensed/Public Sans/IBM Plex Mono) não foi aplicado — a página nova segue o mesmo Tailwind/shadcn neutro já usado no resto do dashboard, para manter consistência com o código existente. As sub-seções "Templates", "Regras de aprovação" e "Geral" descritas no protótipo do `Design.md` também não foram construídas.
