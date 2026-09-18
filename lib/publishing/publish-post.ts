@@ -13,6 +13,22 @@ export interface PublishJobData {
   pipelineItemId: string;
 }
 
+/**
+ * Publica no Instagram — sem gate de aprovação humana (Fase 4 pulada por
+ * decisão de produto), então a corretude deste processor é a única rede de
+ * segurança contra publicação indevida ou duplicada.
+ *
+ * Duas guardas independentes:
+ * 1. O item precisa estar em "renderizando" (não basta ter `render_url`
+ *    preenchida): isso amarra a publicação a um render de verdade iniciado
+ *    pelo pipeline, em vez de aceitar qualquer linha com uma URL gravada.
+ * 2. O update final para "publicado" é condicional (`.eq("status",
+ *    "renderizando")`). Se ele atualizar 0 linhas, outra invocação já
+ *    publicou este item enquanto esta rodava — logamos como quase-acidente,
+ *    porque nesse caso a chamada ao Zernio pode ter acontecido duas vezes.
+ *    Quem evita isso na prática é o lock do drain (`lib/queue/lock.ts`); o
+ *    CAS é a garantia estrutural que sobrevive à remoção do lock.
+ */
 export async function processPublishJob({ pipelineItemId }: PublishJobData): Promise<void> {
   const supabase = getServiceRoleClient();
   const { data: item, error } = await supabase
@@ -21,7 +37,9 @@ export async function processPublishJob({ pipelineItemId }: PublishJobData): Pro
     .eq("id", pipelineItemId)
     .maybeSingle();
   if (error) throw error;
-  if (!item || !item.render_url || item.status === "publicado") return;
+  if (!item || item.status !== "renderizando" || !item.render_url || !item.caption_headline || !item.caption_body) {
+    return;
+  }
 
   try {
     const client = getZernioClient();
@@ -31,7 +49,7 @@ export async function processPublishJob({ pipelineItemId }: PublishJobData): Pro
       captionText: `${item.caption_headline}\n\n${item.caption_body}`,
     });
 
-    const { error: updateError } = await supabase
+    const { data: updated, error: updateError } = await supabase
       .from("pipeline_items")
       .update({
         status: "publicado",
@@ -40,8 +58,19 @@ export async function processPublishJob({ pipelineItemId }: PublishJobData): Pro
         publish_permalink: result.permalink,
         publish_error: null,
       })
-      .eq("id", pipelineItemId);
+      .eq("id", pipelineItemId)
+      // compare-and-swap: só transiciona se ainda estiver em "renderizando"
+      .eq("status", "renderizando")
+      .select("id");
     if (updateError) throw updateError;
+    if (!updated || updated.length === 0) {
+      console.warn(
+        `[publish] item ${pipelineItemId} já não estava mais em "renderizando" no momento do update — ` +
+          `outra invocação publicou em paralelo. POSSÍVEL PUBLICAÇÃO DUPLICADA no Zernio (post ${result.postId}) — ` +
+          `verificar manualmente no Instagram.`,
+      );
+      return;
+    }
 
     await logSystemAuditEvent({
       action: "status_changed",
