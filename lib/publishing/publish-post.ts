@@ -1,5 +1,6 @@
 // lib/publishing/publish-post.ts
 import { getZernioClient } from "./zernio-client";
+import { ZernioAmbiguousPublishError } from "./real-zernio-client";
 import { logSystemAuditEvent } from "@/lib/audit/log-system-event";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
@@ -45,9 +46,6 @@ export async function processPublishJob({ pipelineItemId }: PublishJobData): Pro
       idempotencyKey: pipelineItemId,
     });
   } catch (err) {
-    // Nada foi publicado ainda — seguro deixar o drainQueue re-tentar
-    // (rethrow). Se já tivesse sido publicado, relançar aqui faria um retry
-    // chamar client.publish() de novo e postar duas vezes no Instagram.
     console.error(`[publish] falha ao publicar ${pipelineItemId}:`, err);
     const { error: errorUpdateError } = await supabase
       .from("pipeline_items")
@@ -56,6 +54,16 @@ export async function processPublishJob({ pipelineItemId }: PublishJobData): Pro
     if (errorUpdateError) {
       console.error(`[publish] falha ao registrar publish_error para ${pipelineItemId}:`, errorUpdateError);
     }
+    // ZernioAmbiguousPublishError significa "provavelmente já publicado" (409
+    // de idempotência sem corpo para confirmar) — re-tentar só bateria no
+    // mesmo 409 de novo, então NÃO relançamos: o item fica visível no Kanban
+    // com publish_error pedindo verificação manual, em vez de esgotar as
+    // tentativas do drainQueue fingindo que é um erro transitório comum.
+    if (err instanceof ZernioAmbiguousPublishError) return;
+    // Para qualquer outro erro, nada foi publicado ainda — seguro deixar o
+    // drainQueue re-tentar (rethrow). Se já tivesse sido publicado, relançar
+    // aqui faria um retry chamar client.publish() de novo e postar duas vezes
+    // no Instagram.
     throw err;
   }
 

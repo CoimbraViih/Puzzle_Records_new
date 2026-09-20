@@ -14,6 +14,15 @@ vi.mock("@/lib/api-keys/api-keys", () => ({ verifyApiKey }));
 vi.mock("@/lib/ingestion/pipeline-items", () => ({ upsertPipelineItem }));
 vi.mock("@/workers/queues", () => ({ captionQueue: { add: captionQueueAdd } }));
 vi.mock("@/lib/queue/trigger", () => ({ triggerQueueDrain }));
+// assertPublicHttpsUrl faz uma resolução de DNS de verdade — mockado para os
+// testes não dependerem de rede/DNS disponível (CI, sandbox offline, etc.).
+// O comportamento real de rejeitar IP privado é coberto pelos testes de
+// lib/http/url-safety.test.ts.
+vi.mock("@/lib/http/url-safety", () => ({
+  assertPublicHttpsUrl: async (value: string) => {
+    if (new URL(value).protocol !== "https:") throw new Error("URL precisa ser https");
+  },
+}));
 vi.mock("@/lib/supabase/service-role", () => ({
   getServiceRoleClient: () => ({
     storage: { from: () => ({ upload: storageUpload }) },
@@ -88,7 +97,7 @@ describe("POST /api/n8n/webhook", () => {
       arrayBuffer: async () => new ArrayBuffer(10),
     });
     storageUpload.mockResolvedValue({ error: null });
-    upsertPipelineItem.mockResolvedValue({ id: "item-1", external_id: "x" });
+    upsertPipelineItem.mockResolvedValue({ id: "item-1", status: "recebido" });
 
     const response = await POST(
       makeRequest(
@@ -103,6 +112,28 @@ describe("POST /api/n8n/webhook", () => {
     );
     expect(captionQueueAdd).toHaveBeenCalledWith("caption", { pipelineItemId: "item-1" });
     expect(triggerQueueDrain).toHaveBeenCalled();
+  });
+
+  it("não reenfileira a legenda quando o item já existia em uma etapa posterior (webhook duplicado/corrida com o polling)", async () => {
+    verifyApiKey.mockResolvedValue({ id: "key-1", name: "n8n prod" });
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      headers: new Headers({ "content-length": "10" }),
+      arrayBuffer: async () => new ArrayBuffer(10),
+    });
+    storageUpload.mockResolvedValue({ error: null });
+    upsertPipelineItem.mockResolvedValue({ id: "item-1", status: "legenda" });
+
+    const response = await POST(
+      makeRequest(
+        { externalId: "x", mediaUrl: "https://cdn.n8n.io/a.jpg", mimeType: "image/jpeg" },
+        { authorization: "Bearer pzr_valida" },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(captionQueueAdd).not.toHaveBeenCalled();
+    expect(triggerQueueDrain).not.toHaveBeenCalled();
   });
 
   it("retorna 500 com JSON estruturado (sem lançar) quando upsertPipelineItem falha após o upload", async () => {

@@ -1,5 +1,18 @@
-import { describe, it, expect } from "vitest";
-import { buildPipelineItemPayload } from "./pipeline-items";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const upsertSelect = vi.fn();
+const singleSelect = vi.fn();
+
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: () => ({
+    from: () => ({
+      upsert: () => ({ select: () => upsertSelect() }),
+      select: () => ({ eq: () => ({ eq: () => ({ single: singleSelect }) }) }),
+    }),
+  }),
+}));
+
+import { buildPipelineItemPayload, upsertPipelineItem } from "./pipeline-items";
 
 describe("buildPipelineItemPayload", () => {
   it("monta o payload de um item vindo do Drive", () => {
@@ -56,5 +69,46 @@ describe("buildPipelineItemPayload", () => {
     expect(payload.origin).toBe("n8n");
     expect(payload.storage_path).toBe("n8n/n8n-run-42.jpg");
     expect(payload.drive_file_id).toBeNull();
+  });
+});
+
+describe("upsertPipelineItem", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("retorna o status atual mesmo quando a linha já existia (não sobrescrita pelo upsert)", async () => {
+    // ignoreDuplicates faz o upsert não retornar a linha quando já existe.
+    upsertSelect.mockResolvedValue({ data: null, error: null });
+    // A linha já tinha avançado para "legenda" antes deste upsert duplicado
+    // (ex.: webhook e polling processando o mesmo arquivo).
+    singleSelect.mockResolvedValue({ data: { id: "item-1", status: "legenda" }, error: null });
+
+    const result = await upsertPipelineItem({
+      origin: "drive",
+      externalId: "f1",
+      title: "t",
+      author: "a",
+      mimeType: "image/jpeg",
+    });
+
+    // Crítico: o chamador (polling/webhook) decide se reenfileira com base
+    // neste status, não em "a linha já existia" — ver comentário na função.
+    expect(result).toEqual({ id: "item-1", status: "legenda" });
+  });
+
+  it("retorna status 'recebido' para uma linha recém-inserida", async () => {
+    upsertSelect.mockResolvedValue({ data: [{ id: "item-2" }], error: null });
+    singleSelect.mockResolvedValue({ data: { id: "item-2", status: "recebido" }, error: null });
+
+    const result = await upsertPipelineItem({
+      origin: "telegram",
+      externalId: "t1",
+      title: "t",
+      author: "a",
+      mimeType: "image/jpeg",
+    });
+
+    expect(result).toEqual({ id: "item-2", status: "recebido" });
   });
 });

@@ -3,6 +3,26 @@ import type { ZernioAnalytics, ZernioClient, ZernioPublishInput, ZernioPublishRe
 
 const DEFAULT_API_BASE_URL = "https://zernio.com/api";
 
+/**
+ * Um 409 do Zernio é o próprio guard de idempotência dele dizendo "esse
+ * conteúdo já foi publicado nas últimas 24h" — ou seja, o post JÁ ESTÁ no ar,
+ * o oposto de "ainda não publicado". Se o corpo desse 409 vier vazio/não-JSON
+ * não há como extrair o postId/permalink, mas ainda assim NÃO é seguro tratar
+ * como "falha transitória, pode re-tentar": re-tentar só vai bater no mesmo
+ * 409 de novo, e propagar isso como erro genérico faz `processPublishJob`
+ * relançar para o `drainQueue` re-tentar — que depois de esgotar as
+ * tentativas descarta o job e deixa o item preso em "renderizando" com um
+ * `publish_error` como se nada tivesse sido publicado, quando na verdade o
+ * post está ao vivo no Instagram. Ver `lib/publishing/publish-post.ts`, que
+ * trata esta classe de erro sem relançar (não adianta re-tentar).
+ */
+export class ZernioAmbiguousPublishError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ZernioAmbiguousPublishError";
+  }
+}
+
 interface ZernioPlatformResult {
   platform: string;
   status: string;
@@ -87,6 +107,11 @@ class RealZernioClient implements ZernioClient {
     try {
       payload = JSON.parse(rawBody) as ZernioCreatePostResponse;
     } catch {
+      if (response.status === 409) {
+        throw new ZernioAmbiguousPublishError(
+          `Zernio retornou 409 (idempotência — post provavelmente já publicado) sem corpo JSON utilizável para confirmar; verificar manualmente no Instagram antes de re-tentar (corpo: ${rawBody.slice(0, 200)})`,
+        );
+      }
       throw new Error(
         `Zernio publish retornou ${response.status} sem corpo JSON utilizável (corpo: ${rawBody.slice(0, 200)})`,
       );

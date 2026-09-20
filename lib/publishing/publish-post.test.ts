@@ -20,6 +20,7 @@ vi.mock("./zernio-client", () => ({
 vi.mock("@/lib/audit/log-system-event", () => ({ logSystemAuditEvent: vi.fn() }));
 
 import { processPublishJob } from "./publish-post";
+import { ZernioAmbiguousPublishError } from "./real-zernio-client";
 
 const COMPLETE_ITEM = {
   id: "item-1",
@@ -60,5 +61,23 @@ describe("processPublishJob — guarda contra publicação indevida", () => {
     await processPublishJob({ pipelineItemId: "item-1" });
 
     expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("registra publish_error e NÃO relança quando o Zernio retorna 409 ambíguo (provavelmente já publicado)", async () => {
+    maybeSingle.mockResolvedValue({ data: { ...COMPLETE_ITEM, status: "renderizando" }, error: null });
+    publish.mockRejectedValue(new ZernioAmbiguousPublishError("409 sem corpo utilizável"));
+    update.mockReturnValue({ eq: () => Promise.resolve({ error: null }) });
+
+    await expect(processPublishJob({ pipelineItemId: "item-1" })).resolves.toBeUndefined();
+
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ publish_error: "409 sem corpo utilizável" }));
+  });
+
+  it("relança erros comuns de publish() para o drainQueue re-tentar", async () => {
+    maybeSingle.mockResolvedValue({ data: { ...COMPLETE_ITEM, status: "renderizando" }, error: null });
+    publish.mockRejectedValue(new Error("timeout de rede"));
+    update.mockReturnValue({ eq: () => Promise.resolve({ error: null }) });
+
+    await expect(processPublishJob({ pipelineItemId: "item-1" })).rejects.toThrow("timeout de rede");
   });
 });

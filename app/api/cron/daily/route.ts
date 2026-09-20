@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAuthorizedCronRequest, requireEnv } from "@/lib/ingestion/cron-auth";
 import { syncDriveChanges } from "@/lib/ingestion/google-drive";
 import { drainAllQueues } from "@/lib/queue/drain-all";
+import { reconcileStuckPipelineItems } from "@/lib/pipeline/reconcile";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -27,7 +28,8 @@ export async function GET(request: NextRequest) {
   }
 
   const drive = await syncDriveChanges();
+  const reconciled = await reconcileStuckPipelineItems();
   const queue = await drainAllQueues();
 
-  return NextResponse.json({ ok: true, drive, queue });
+  return NextResponse.json({ ok: true, drive, reconciled, queue });
 }

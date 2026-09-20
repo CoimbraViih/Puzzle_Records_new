@@ -93,7 +93,7 @@ export async function syncDriveChanges() {
         driveFileId: file.id!,
         metadata: {},
       });
-      if (result) {
+      if (result.status === "recebido") {
         await captionQueue.add("caption", { pipelineItemId: result.id });
         triggerQueueDrain();
       }

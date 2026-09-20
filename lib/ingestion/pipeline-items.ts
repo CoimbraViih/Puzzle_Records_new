@@ -39,22 +39,46 @@ export function buildPipelineItemPayload(input: BuildPipelineItemInput): Pipelin
   };
 }
 
+export interface UpsertPipelineItemResult {
+  id: string;
+  status: string;
+}
+
 /**
- * Idempotente: se (origin, external_id) já existe, não faz nada e retorna null.
- * Cobre o caso de webhook + polling processarem o mesmo arquivo.
+ * Idempotente: se (origin, external_id) já existe, não recria nem sobrescreve o
+ * progresso já feito (ignoreDuplicates evita voltar uma linha em "legenda"/
+ * "renderizando" para "recebido"). Cobre o caso de webhook + polling
+ * processarem o mesmo arquivo.
+ *
+ * Sempre retorna o estado atual da linha (id + status), tenha sido inserida
+ * agora ou já existisse — os chamadores devem decidir se precisam enfileirar
+ * o próximo job com base no `status` retornado (ex.: só enfileirar legenda se
+ * `status === "recebido"`), nunca assumindo que "a linha já existia" implica
+ * "já foi enfileirada". Isso é necessário porque o polling de segurança (rede
+ * de proteção contra webhook perdido) frequentemente vê uma linha que já
+ * existe: se o enqueue da tentativa anterior falhou (ex.: Redis fora do ar),
+ * a linha ficaria presa em "recebido" para sempre se o polling só
+ * reenfileirasse quando ele mesmo tivesse acabado de inserir a linha.
  */
-export async function upsertPipelineItem(input: BuildPipelineItemInput) {
+export async function upsertPipelineItem(input: BuildPipelineItemInput): Promise<UpsertPipelineItemResult> {
   const supabase = getServiceRoleClient();
   const payload = buildPipelineItemPayload(input);
 
-  const { data, error } = await supabase
+  const { error: upsertError } = await supabase
     .from("pipeline_items")
     .upsert(payload, { onConflict: "origin,external_id", ignoreDuplicates: true })
-    .select("id, external_id")
-    .maybeSingle();
+    .select("id");
+  if (upsertError) throw upsertError;
 
+  const { data, error } = await supabase
+    .from("pipeline_items")
+    .select("id, status")
+    .eq("origin", input.origin)
+    .eq("external_id", input.externalId)
+    .single();
   if (error) throw error;
-  return data; // null quando já existia (ignoreDuplicates não retorna a linha existente)
+
+  return { id: data.id, status: data.status };
 }
 
 export interface PipelineItemRow {

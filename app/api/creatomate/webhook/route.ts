@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireEnv } from "@/lib/ingestion/cron-auth";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
@@ -6,15 +5,9 @@ import { isHttpsUrl } from "@/lib/http/url-safety";
 import { publishQueue } from "@/workers/queues";
 import { triggerQueueDrain } from "@/lib/queue/trigger";
 import { logSystemAuditEvent } from "@/lib/audit/log-system-event";
+import { safeCompare } from "@/lib/security/safe-compare";
 
 export const dynamic = "force-dynamic";
-
-function safeCompare(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
-}
 
 interface CreatomateWebhookPayload {
   id?: string;

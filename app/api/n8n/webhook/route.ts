@@ -1,7 +1,7 @@
 // app/api/n8n/webhook/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { verifyApiKey } from "@/lib/api-keys/api-keys";
-import { isHttpsUrl } from "@/lib/http/url-safety";
+import { assertPublicHttpsUrl } from "@/lib/http/url-safety";
 import { upsertPipelineItem } from "@/lib/ingestion/pipeline-items";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
 import { captionQueue } from "@/workers/queues";
@@ -70,8 +70,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "externalId inválido" }, { status: 400 });
   }
 
-  if (!isHttpsUrl(payload.mediaUrl)) {
-    return NextResponse.json({ error: "mediaUrl precisa ser uma URL https" }, { status: 400 });
+  try {
+    await assertPublicHttpsUrl(payload.mediaUrl);
+  } catch (error) {
+    console.warn("[n8n/webhook] mediaUrl rejeitada:", error instanceof Error ? error.message : error);
+    return NextResponse.json({ error: "mediaUrl precisa ser uma URL https pública" }, { status: 400 });
   }
 
   let fileBytes: Uint8Array;
@@ -127,7 +130,7 @@ export async function POST(request: NextRequest) {
       metadata: { ...payload.metadata, apiKeyId: apiKey.id, apiKeyName: apiKey.name },
     });
 
-    if (result) {
+    if (result.status === "recebido") {
       await captionQueue.add("caption", { pipelineItemId: result.id });
       triggerQueueDrain();
     }

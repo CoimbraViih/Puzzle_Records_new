@@ -129,7 +129,7 @@ export function createTelegramBot() {
       metadata: { chatId: ctx.chat?.id },
     });
 
-    if (result) {
+    if (result.status === "recebido") {
       await captionQueue.add("caption", { pipelineItemId: result.id });
       triggerQueueDrain();
     }

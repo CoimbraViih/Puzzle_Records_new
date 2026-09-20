@@ -1,17 +1,10 @@
 // app/api/drive/webhook/route.ts
-import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { syncDriveChanges } from "@/lib/ingestion/google-drive";
 import { requireEnv } from "@/lib/ingestion/cron-auth";
+import { safeCompare } from "@/lib/security/safe-compare";
 
 export const dynamic = "force-dynamic";
-
-function safeCompare(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
-}
 
 export async function POST(request: NextRequest) {
   const token = request.headers.get("x-goog-channel-token");

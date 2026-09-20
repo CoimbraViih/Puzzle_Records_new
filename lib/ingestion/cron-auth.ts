@@ -1,6 +1,8 @@
+import { safeCompare } from "@/lib/security/safe-compare";
+
 export function isAuthorizedCronRequest(authorizationHeader: string | null, expectedSecret: string): boolean {
   if (!authorizationHeader) return false;
-  return authorizationHeader === `Bearer ${expectedSecret}`;
+  return safeCompare(authorizationHeader, `Bearer ${expectedSecret}`);
 }
 
 /**
