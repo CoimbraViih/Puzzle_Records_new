@@ -65,7 +65,7 @@ Cada fase é um incremento entregável e testável isoladamente antes de avança
 **Status (2026-09-18)**: código implementado, revisado (8 agentes de revisão em paralelo cobrindo correção, comportamento removido, eficiência, simplificação, reuso e convenções) e **mergeado em `main` via PR #3, deployado em produção**. A lacuna arquitetural crítica identificada ao final da Fase 1 foi resolvida: `workers/queues.ts` roda pelo padrão **cron-drain** — o cron consolidado `/api/cron/daily` drena a fila BullMQ dentro de uma Serverless Function.
 
 **Entregáveis**:
-- [x] Colunas de legenda/render/publicação e tabela de auditoria adicionadas via migration `00000000000003_add_caption_render_publish.sql` — aplicada pelo usuário no Supabase real (confirmado 2026-09-17).
+- [x] Colunas de legenda/render/publicação adicionadas via migration `00000000000003_add_caption_render_publish.sql` — **na verdade nunca tinha sido aplicada** apesar do registro anterior aqui dizer "confirmado 2026-09-17" (era falso/desatualizado); só foi de fato aplicada em 2026-09-20 ao investigar o bug reportado pelo usuário (ver "Incidente" mais abaixo).
 - [x] Cliente OpenRouter (`lib/captions/`) com structured output / JSON schema, prompt com instrução explícita de não inventar fatos sobre pessoas reais. `JSON.parse` protegido contra retorno malformado.
 - [x] Processor de geração de legenda consumindo itens em "recebido" via fila, disparado automaticamente a partir da ingestão.
 - [x] **Fix pós-review**: o processor relança erros transitórios em vez de engoli-los, para o mecanismo de retry do `drainQueue` funcionar de verdade (antes, toda falha virava permanente na 1ª tentativa, sem retry real).
@@ -189,5 +189,18 @@ Live end-to-end QA do webhook do n8n contra o Supabase/Redis real ainda foi deli
 
 **Pendências que continuam em aberto** (não fazem parte desta rodada):
 - Gate de aprovação humana (Fase 4) continua pulado — ver pendência geral #1 abaixo.
-- `OPENROUTER_API_KEY` e a confirmação de que `REDIS_URL` de produção tem permissão de escrita continuam pendentes **em produção na Vercel** (resolvidos só localmente nesta rodada).
+- Confirmação de que `REDIS_URL` de produção (na Vercel) é a mesma connection string com permissão de escrita testada localmente.
 - QA end-to-end real (Drive/Telegram/n8n → Kanban → publicação no Instagram) continua não executado.
+- Credenciais de Google Drive/Telegram continuam ausentes tanto local quanto em produção (confirmado via `filter_project_envs` da Vercel em 2026-09-20) — ingestão real por esses dois canais não funciona ainda.
+
+## Incidente: dashboard inteiro quebrado por migration nunca aplicada de verdade (2026-09-20)
+
+**Sintoma**: usuário reportou que todos os itens de navegação do dashboard (Início, Kanban, Calendário, Analytics) mostravam a tela de erro genérica "Erro ao carregar dados do pipeline" (`app/dashboard/error.tsx`).
+
+**Causa raiz**: a migration `00000000000003_add_caption_render_publish.sql` (colunas `caption_headline`, `render_url`, `publish_error` etc. em `pipeline_items`) **nunca tinha sido aplicada de verdade** no projeto Supabase real, apesar de `.docs/PLAN.md` registrar repetidamente "aplicada pelo usuário... confirmado 2026-09-17" — esse registro estava errado/desatualizado. `getPipelineItemsGroupedByStatus()` (usada por Início/Kanban/Calendário/Analytics) faz `select` dessas colunas, e o Postgres retornava `42703 column pipeline_items.caption_headline does not exist`, derrubando as quatro páginas.
+
+**Como foi confirmado**: usando o MCP do Supabase diretamente contra o projeto real (`dtfnxurjemdabqukgqzc`) — `list_migrations` não ajudou (esse projeto foi reaproveitado de um produto anterior "Cut.Pro" e seu histórico de migrations do Supabase CLI não tem nenhuma relação com os arquivos em `supabase/migrations/` deste app, que sempre foram aplicados via SQL Editor manualmente). A checagem real foi via `information_schema.columns`: confirmou que as migrations 1 (`audit_log`), 2 (`pipeline_items`/`drive_sync_state`) e 4 (`api_keys` + `origin` ampliado para `n8n`) estavam corretas, e isolou que só a 3 estava faltando.
+
+**Correção**: migration 3 aplicada diretamente via `apply_migration` do MCP do Supabase; colunas confirmadas presentes; query de leitura testada e funcionando.
+
+**Lição para não repetir**: registros anteriores neste arquivo de "migration aplicada, confirmado pelo usuário" nem sempre são confiáveis — o schema real deve ser conferido diretamente (`information_schema.columns` ou uma leitura de teste) antes de assumir que uma migration histórica realmente rodou, especialmente quando o projeto Supabase é compartilhado/reaproveitado de outro produto e não usa o fluxo de migrations do Supabase CLI.
