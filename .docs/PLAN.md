@@ -18,7 +18,7 @@ Cada fase é um incremento entregável e testável isoladamente antes de avança
 
 **Pendências manuais antes de considerar a fase 100% pronta**:
 1. ~~Preencher `.env.local` com credenciais reais do Supabase~~ — feito. `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` já estão em `.env.local` (não versionado).
-2. **Redis/Upstash**: a connection string recebida usa o usuário `default_ro` — confirmado via teste real que é **somente leitura** (`NOPERM` em `SET`). BullMQ precisa escrever para enfileirar jobs. Falta obter a connection string com o usuário `default` (leitura/escrita) na aba Details do Upstash.
+2. ~~**Redis/Upstash**: a connection string recebida usa o usuário `default_ro`~~ — **resolvido (2026-09-19)**. A connection string em `.env.local` (`better-kitten-282197.upstash.io`) foi testada com um `SET`/`DEL` real via `ioredis` e confirmada como leitura/escrita. Ainda não confirmado se o `REDIS_URL` configurado em produção na Vercel é o mesmo valor — verificar antes de considerar a fila 100% operacional em produção.
 3. Aplicar a migration `supabase/migrations/00000000000001_add_audit_log.sql` no projeto Supabase real (só cria `audit_log`; `profiles` já existe e não deve ser recriado — o usuário real já está com `role = 'admin'`) — ainda não aplicada, precisa ser colada no SQL Editor do Supabase Studio (sem acesso à connection string direta do Postgres para automatizar via CLI).
 4. Configurar as mesmas 4 variáveis (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `REDIS_URL`) em Project Settings → Environment Variables no projeto Vercel e redeployar.
 5. Rodar o checklist de QA manual (Task 2 de `docs/plans/2026-09-16-fase-0-fechamento.md`) contra o Supabase real, local e em produção.
@@ -71,10 +71,10 @@ Cada fase é um incremento entregável e testável isoladamente antes de avança
 - [x] **Fix pós-review**: o processor relança erros transitórios em vez de engoli-los, para o mecanismo de retry do `drainQueue` funcionar de verdade (antes, toda falha virava permanente na 1ª tentativa, sem retry real).
 
 **Pendências**:
-1. **`OPENROUTER_API_KEY` ainda não configurada em lugar nenhum** (nem local, nem produção) — o usuário nunca forneceu essa credencial. Sem ela, nenhuma legenda é gerada; itens ficam presos em "recebido".
-2. `REDIS_URL` configurada em produção, mas a permissão de escrita (leitura/escrita vs. `default_ro`, pendência histórica da Fase 0) não foi reverificada nesta rodada — confirmar antes de considerar a fila 100% operacional.
+1. ~~`OPENROUTER_API_KEY` ainda não configurada em lugar nenhum~~ — **resolvido localmente (2026-09-19)**: chave real adicionada a `.env.local`, validada com `GET /api/v1/auth/key` (200) e com uma chamada real de geração de legenda via `requestCaptionFromOpenRouter` (headline/body retornados e parseados corretamente pelo modelo `anthropic/claude-sonnet-5`, default de `OPENROUTER_MODEL`). **Ainda não configurada em produção na Vercel** — sem isso, o pipeline real (Drive/Telegram/n8n → publicação) continua travando em "recebido" em produção.
+2. `REDIS_URL` — permissão de escrita confirmada para a connection string local (ver pendência #2 resolvida na Fase 0); falta confirmar se é a mesma configurada em produção na Vercel.
 
-**Critério de pronto**: item processado recebe legenda estruturada e transita de status automaticamente; falhas de geração ficam visíveis, não travam a fila. *(Código pronto, revisado e deployado ✅; validação end-to-end bloqueada pela pendência #1 — falta a API key.)*
+**Critério de pronto**: item processado recebe legenda estruturada e transita de status automaticamente; falhas de geração ficam visíveis, não travam a fila. *(Código pronto, revisado e deployado ✅; validado localmente com credenciais reais. Falta configurar `OPENROUTER_API_KEY` em produção para valer para o pipeline real.)*
 
 ## Fase 3 — Render (Creatomate)
 
@@ -161,4 +161,33 @@ Executar depois que as env vars restantes estiverem configuradas em produção:
 
 Live end-to-end QA do webhook do n8n contra o Supabase/Redis real ainda foi deliberadamente adiado (não executado nesta implementação) porque não existe staging separado — `.env.local` aponta para o mesmo Redis/Supabase de produção usado pelo deploy real na Vercel. O risco é baixo (a pipeline trava na geração de legenda sem `OPENROUTER_API_KEY`, então não cascateia para uma publicação real no Instagram), mas uma linha de teste stray em `pipeline_items` ainda apareceria no Kanban real; essa validação segue pendente para o usuário rodar manualmente com uma API key real quando quiser.
 
-**Fora de escopo desta rodada**: o tema visual completo do `Design.md` (cores de marca magenta, tipografia Barlow Condensed/Public Sans/IBM Plex Mono) não foi aplicado — a página nova segue o mesmo Tailwind/shadcn neutro já usado no resto do dashboard, para manter consistência com o código existente. As sub-seções "Templates", "Regras de aprovação" e "Geral" descritas no protótipo do `Design.md` também não foram construídas.
+**Fora de escopo desta rodada**: as sub-seções "Templates", "Regras de aprovação" e "Geral" descritas no protótipo do `Design.md` não foram construídas (só Conexões e API Keys). O tema visual do `Design.md` (cores de marca magenta, tipografia Barlow Condensed/Public Sans/IBM Plex Mono) que faltava aqui **foi aplicado depois**, na branch `theme-design-visual` (commit `b83db555`, mergeada em `main` em 2026-09-19) — ver seção seguinte.
+
+## Tema visual do Design.md aplicado ao dashboard (2026-09-19)
+
+**Status**: implementado e mergeado em `main`. Tokens de marca/status/tipografia (magenta, Barlow Condensed/Public Sans/IBM Plex Mono, pills de status good/warning/serious/critical/info/processing) aplicados em `app/globals.css` e propagados para sidebar, topbar, login e todas as views do dashboard (Início, Kanban, Calendário, Analytics, Configurações).
+
+## Auditoria completa, correção de bugs e limpeza (2026-09-19)
+
+**Contexto**: a pedido do usuário, rodada de fechamento cobrindo todo o projeto — testes, lint, build, revisão de código dedicada, correção de bugs encontrados, limpeza de branch e deploy.
+
+**Credenciais reais fornecidas pelo usuário e configuradas em `.env.local`** (só local, não versionado):
+- `OPENROUTER_API_KEY` — validada com chamada real (`GET /api/v1/auth/key` → 200; geração de legenda real testada e funcionando com o modelo `anthropic/claude-sonnet-5`).
+- `REDIS_URL` (Upstash `better-kitten-282197`) — testada com `SET`/`DEL` reais via `ioredis`, confirmando permissão de escrita (resolve a pendência histórica da Fase 0).
+
+**Hygiene de build/lint**: `eslint.config.mjs` não excluía `typescript-sdk/` (clone de referência externo do SDK do OpenRouter, com `.git` próprio, já excluído de `tsconfig.json`/`vitest.config.ts` numa rodada anterior) — gerava 2000+ erros espúrios de lint vindos do SDK. Corrigido.
+
+**Revisão de código dedicada** (agente `code-reviewer` cobrindo `lib/`, `workers/` e `app/api/` inteiros, focada em bugs não documentados nas rodadas anteriores) encontrou e todos foram corrigidos nesta rodada, com testes novos (76 testes no total, antes 62):
+1. **[HIGH] Gap estrutural de enqueue-após-escrita**: `upsertPipelineItem()` com `ignoreDuplicates: true` retornava `null` para linhas já existentes; os chamadores (polling do Drive, Telegram, webhook do n8n) interpretavam isso como "não fazer nada", inclusive quando uma tentativa anterior de enfileirar o job de legenda tinha falhado (ex.: Redis fora do ar) — a própria rede de segurança do polling contra webhook perdido era derrotada silenciosamente, deixando itens presos em "recebido" para sempre. Corrigido: `upsertPipelineItem()` agora sempre retorna o `status` atual da linha, e os chamadores decidem enfileirar com base nisso. Complementado por `lib/pipeline/reconcile.ts`, chamado a cada `/api/cron/daily`: reenfileira itens presos em qualquer etapa (recebido/legenda/renderizando) há mais de 15min sem erro registrado — a mesma lacuna existia (sem nenhuma rede de segurança) nas transições legenda→render e render→publish.
+2. **[MEDIUM] Comparação de segredo não constant-time**: `CRON_SECRET` em `cron-auth.ts` usava `===` puro, diferente do padrão (`timingSafeEqual`) já usado em `drive/webhook` e `creatomate/webhook`. Extraído `lib/security/safe-compare.ts` compartilhado, aplicado nos três lugares.
+3. **[MEDIUM] 409 ambíguo do Zernio tratado como erro comum**: um 409 (idempotência — post já publicado) com corpo vazio/não-JSON virava um erro genérico que o `drainQueue` re-tentava; depois de esgotar tentativas, o item ficava preso em "renderizando" com `publish_error`, escondendo que a publicação já tinha acontecido de verdade. Nova classe `ZernioAmbiguousPublishError` sinaliza esse caso; `processPublishJob` não relança (re-tentar não resolve nada), só registra `publish_error` pedindo verificação manual.
+4. **[LOW] SSRF no webhook do n8n**: `mediaUrl` só validava o esquema `https://`, sem checar o destino — uma API key vazada permitiria usar o endpoint para fazer o servidor da Vercel requisitar endereços internos/privados. Novo `assertPublicHttpsUrl()` em `lib/http/url-safety.ts` resolve o hostname via DNS e rejeita ranges privados/loopback/link-local (IPv4 e IPv6) antes do fetch.
+
+**Verificação**: 76 testes passando (18 arquivos), lint limpo (0 erros no código do projeto), build de produção OK. Commit `3fd1d85` em `main`.
+
+**Limpeza**: branch `theme-design-visual` (já mergeada) apagada local e remotamente. Deploy de produção disparado automaticamente pelo push a `main` via integração GitHub↔Vercel.
+
+**Pendências que continuam em aberto** (não fazem parte desta rodada):
+- Gate de aprovação humana (Fase 4) continua pulado — ver pendência geral #1 abaixo.
+- `OPENROUTER_API_KEY` e a confirmação de que `REDIS_URL` de produção tem permissão de escrita continuam pendentes **em produção na Vercel** (resolvidos só localmente nesta rodada).
+- QA end-to-end real (Drive/Telegram/n8n → Kanban → publicação no Instagram) continua não executado.
