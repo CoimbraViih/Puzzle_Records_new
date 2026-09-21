@@ -8,16 +8,7 @@ import { isUserRole, canAccessRoute, type UserRole } from "@/lib/auth/permission
 import { upsertPipelineItem } from "@/lib/ingestion/pipeline-items";
 import { captionQueue } from "@/workers/queues";
 import { triggerQueueDrain } from "@/lib/queue/trigger";
-
-// 100MB é o teto de corpo de requisição da própria Vercel Functions (ver
-// next.config.ts) — 5MB de folga aqui para o overhead do multipart/form-data
-// (boundaries, headers de cada parte) não estourar esse teto. Exportado para
-// o formulário (create-post-form.tsx) validar o arquivo no navegador ANTES
-// de enviar: sem essa checagem client-side, um arquivo maior que o limite do
-// Server Action é rejeitado pelo próprio Next.js antes do código deste
-// arquivo rodar — sem chance de capturar o erro e mostrar mensagem amigável,
-// só o error boundary genérico do dashboard (bug real encontrado em produção).
-export const MAX_MEDIA_BYTES = 95 * 1024 * 1024;
+import { MAX_MEDIA_BYTES } from "./constants";
 
 function extensionForMimeType(mimeType: string): string {
   if (mimeType.startsWith("video")) return "mp4";
@@ -79,7 +70,7 @@ export async function createManualPipelineItemAction(
     return { error: "Selecione um arquivo de vídeo ou foto para enviar.", success: false };
   }
   if (file.size > MAX_MEDIA_BYTES) {
-    return { error: "Arquivo acima do limite de 95MB.", success: false };
+    return { error: "Arquivo acima do limite de 50MB (teto do plano do Supabase Storage).", success: false };
   }
 
   const mimeType = file.type || "application/octet-stream";

@@ -4,7 +4,8 @@ import { useActionState, useState, type ChangeEvent, type FormEvent } from "reac
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createManualPipelineItemAction, MAX_MEDIA_BYTES, type CreateManualPostState } from "./actions";
+import { createManualPipelineItemAction, type CreateManualPostState } from "./actions";
+import { MAX_MEDIA_BYTES } from "./constants";
 
 const INITIAL_STATE: CreateManualPostState = { error: null, success: false };
 const MAX_MEDIA_MB = Math.floor(MAX_MEDIA_BYTES / (1024 * 1024));
