@@ -217,3 +217,21 @@ Live end-to-end QA do webhook do n8n contra o Supabase/Redis real ainda foi deli
 **Descoberta adicional (não é bug, é limite de plataforma)**: o próprio projeto Supabase Storage recusa qualquer arquivo acima de **50MB** (`The object exceeded the maximum allowed size`), confirmado empiricamente subindo arquivos de teste direto via API — teto do plano do Supabase, não configurável por bucket nem pelo MCP. O limite do app (`MAX_MEDIA_BYTES`) foi ajustado de volta para 50MB para não deixar o usuário achar que arquivos maiores funcionam.
 
 **Validação end-to-end local**: upload de vídeo real (40MB) → item criado em "recebido" → fila drenada automaticamente (`PUBLIC_BASE_URL`/`CRON_SECRET` adicionados a `.env.local` para isso funcionar localmente) → IA gera manchete/legenda reais → item avança para "legenda". Dados de teste limpos do Supabase real ao final. Usuário de teste `qa-automatizado@puzzlerecords.local` (role `admin`) mantido no Supabase para reuso em testes automatizados futuros.
+
+## Incidente: item preso em "recebido" em produção — causa raiz era REDIS_URL corrompido (2026-09-21)
+
+**Sintoma**: usuário reportou (com screenshot) um item real criado via "Criar post" em produção parado em "Recebido" a 0%, sem nunca avançar para "Legenda".
+
+**Investigação sistemática** (skill `systematic-debugging`, ver AGENTS.md/CLAUDE.md deste projeto):
+1. Confirmado no Redis que o job da fila `caption` estava corretamente enfileirado (`waiting`), nunca processado — descartou hipótese de bug no enqueue em si.
+2. Reproduzido ao vivo contra produção via Playwright: o botão "Criar post" ficava em "Enviando..." por 120s+ sem nenhuma resposta do servidor.
+3. Descartada hipótese de esgotamento de conexões do Upstash (`CLIENT LIST` mostrou 1 conexão ativa, `maxclients=30000`).
+4. Isolado `captionQueue.add()` rodando localmente contra o mesmo Redis real de produção — respondeu em 300ms, provando que o Redis em si não estava fora do ar nem lento.
+5. **Tentativa de fix #1** (`commandTimeout: 10_000` em `workers/connection.ts`): testada de novo em produção real, **não resolveu** — ainda travado após 120s+. `commandTimeout` só limita comandos já enviados esperando resposta, não comandos presos na "offline queue" do ioredis esperando uma conexão que nunca fica pronta.
+6. **Tentativa de fix #2** (`retryStrategy` com teto finito de 3 tentativas + `connectTimeout: 5_000` + `maxRetriesPerRequest: 1`; `enableOfflineQueue: false` foi cogitada e descartada por quebrar o primeiro comando de uma conexão `lazyConnect` nova): deployada e testada de novo — **desta vez falhou rápido (~10s) em vez de travar**, e o erro finalmente visível revelou a causa raiz real: `connect EINVAL //default:...@better-kitten-282197.upstash.io:6379%22` — o `REDIS_URL` configurado na Vercel estava **corrompido**, faltando o prefixo `rediss://` e com um `%22` (aspas literais codificadas) sobrando no final.
+7. **Causa raiz corrigida**: `REDIS_URL` reconfigurado corretamente na Vercel (`edit_project_env` via MCP) com o valor limpo (`rediss://default:...@better-kitten-282197.upstash.io:6379`), redeploy disparado.
+8. **Verificado em produção real**: botão "Criar post" agora responde em ~5s, e o item avança **sozinho, automaticamente**, até "renderizando" via o drain imediato (`triggerQueueDrain`), sem nenhuma intervenção manual.
+
+**O que ficou como resultado permanente, além da correção da env var**: a configuração de `connectTimeout`/`commandTimeout`/`retryStrategy` finito em `workers/connection.ts` não foi a causa raiz, mas é uma defesa real mantida no código — sem ela, qualquer problema futuro de conectividade com o Redis (rede, Upstash fora do ar, outra env var mal configurada) volta a travar a UI por minutos/indefinidamente em vez de falhar rápido e deixar a reconciliação (`lib/pipeline/reconcile.ts`) reprocessar depois.
+
+**Lição**: quando um comando trava indefinidamente sem nenhum erro visível, adicionar timeouts/limites não é "só" uma correção de robustez — é também uma ferramenta de diagnóstico: converter um travamento infinito e silencioso em uma falha rápida e visível foi o que revelou a causa raiz de verdade neste caso, mesmo depois de duas tentativas de fix "erradas" (que continuam sendo melhorias válidas por si só).
