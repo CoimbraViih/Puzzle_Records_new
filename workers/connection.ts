@@ -12,4 +12,20 @@ import IORedis from "ioredis";
 export const redisConnection = new IORedis(process.env.REDIS_URL as string, {
   maxRetriesPerRequest: null,
   lazyConnect: true,
+  // Bug real reproduzido em produção (2026-09-21): itens ficavam presos em
+  // "recebido" com a Server Action travada em "Enviando..." por 60-120s+
+  // antes de responder (às vezes nunca). Causa: em runtime serverless com
+  // reaproveitamento de instância (Vercel Fluid Compute), esta conexão pode
+  // sobreviver entre invocações — se a rede/NAT derrubar o socket
+  // silenciosamente nesse intervalo (comum após alguns minutos ocioso),
+  // ioredis só descobre isso quando o próximo comando (ex.: captionQueue.add)
+  // fica esperando resposta indefinidamente até o timeout de TCP do SO, que
+  // por padrão é da ordem de minutos — não segundos. commandTimeout força
+  // qualquer comando sem resposta a falhar rápido (o catch em
+  // app/dashboard/kanban/actions.ts já trata isso), e o ioredis reconecta
+  // sozinho a partir daí. Nenhum comando de bloqueio roda nesta conexão
+  // (não há BullMQ Worker no projeto — só Queue.add/getJobs via o padrão
+  // cron-drain, ver lib/queue/drain.ts), então é seguro usar commandTimeout
+  // aqui sem interferir em nada.
+  commandTimeout: 10_000,
 });
