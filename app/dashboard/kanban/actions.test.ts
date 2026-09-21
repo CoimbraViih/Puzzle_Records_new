@@ -66,12 +66,12 @@ describe("createManualPipelineItemAction", () => {
     expect(result.success).toBe(false);
   });
 
-  it("retorna erro quando o arquivo excede 50MB", async () => {
+  it("retorna erro quando o arquivo excede 95MB", async () => {
     const result = await createManualPipelineItemAction(
       { error: null, success: false },
-      makeFormData(makeFile(51 * 1024 * 1024)),
+      makeFormData(makeFile(96 * 1024 * 1024)),
     );
-    expect(result.error).toMatch(/50MB/);
+    expect(result.error).toMatch(/95MB/);
     expect(storageUpload).not.toHaveBeenCalled();
   });
 
