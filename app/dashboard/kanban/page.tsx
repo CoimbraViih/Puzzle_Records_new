@@ -1,4 +1,5 @@
 import { getPipelineItemsGroupedByStatus, PIPELINE_STATUSES } from "@/lib/ingestion/pipeline-items";
+import { CreatePostForm } from "./create-post-form";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ const ORIGIN_LABELS: Record<string, string> = {
   drive: "Drive",
   telegram: "Telegram",
   n8n: "n8n",
+  manual: "Manual",
 };
 
 // Pill de status por coluna (Design.md §2/§5) — cor fixa por papel, nunca
@@ -32,45 +34,48 @@ export default async function KanbanPage() {
   const grouped = await getPipelineItemsGroupedByStatus();
 
   return (
-    <div className="flex gap-4 overflow-x-auto p-4">
-      {PIPELINE_STATUSES.map((status) => (
-        <div key={status} className="w-72 shrink-0 rounded-lg border border-border bg-surface p-3">
-          <h2 className="mb-3 flex items-center justify-between text-sm font-semibold">
-            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_PILL[status]}`}>
-              {STATUS_LABELS[status]}
-            </span>
-            <span className="font-mono text-xs text-muted-foreground">{grouped[status].length}</span>
-          </h2>
-          <div className="space-y-2">
-            {grouped[status].length === 0 && (
-              <p className="text-xs text-muted-foreground">Nenhum item.</p>
-            )}
-            {grouped[status].map((item) => (
-              <div key={item.id} className="rounded-md border border-border bg-card p-2 text-sm shadow-xs">
-                <p className="font-medium">{item.caption_headline ?? item.title ?? "(sem título)"}</p>
-                <p className="text-xs text-muted-foreground">
-                  {ORIGIN_LABELS[item.origin] ?? item.origin} · {item.author ?? "autor desconhecido"}
-                </p>
-                {item.render_url && (
-                  <a href={item.render_url} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-info underline">
-                    ver vídeo renderizado
-                  </a>
-                )}
-                {item.publish_permalink && (
-                  <a href={item.publish_permalink} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-good underline">
-                    ver post publicado
-                  </a>
-                )}
-                {(item.caption_error || item.render_error || item.publish_error) && (
-                  <p className="mt-1 text-xs text-critical">
-                    erro: {item.caption_error ?? item.render_error ?? item.publish_error}
+    <div className="p-4">
+      <CreatePostForm />
+      <div className="flex gap-4 overflow-x-auto">
+        {PIPELINE_STATUSES.map((status) => (
+          <div key={status} className="w-72 shrink-0 rounded-lg border border-border bg-surface p-3">
+            <h2 className="mb-3 flex items-center justify-between text-sm font-semibold">
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_PILL[status]}`}>
+                {STATUS_LABELS[status]}
+              </span>
+              <span className="font-mono text-xs text-muted-foreground">{grouped[status].length}</span>
+            </h2>
+            <div className="space-y-2">
+              {grouped[status].length === 0 && (
+                <p className="text-xs text-muted-foreground">Nenhum item.</p>
+              )}
+              {grouped[status].map((item) => (
+                <div key={item.id} className="rounded-md border border-border bg-card p-2 text-sm shadow-xs">
+                  <p className="font-medium">{item.caption_headline ?? item.title ?? "(sem título)"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {ORIGIN_LABELS[item.origin] ?? item.origin} · {item.author ?? "autor desconhecido"}
                   </p>
-                )}
-              </div>
-            ))}
+                  {item.render_url && (
+                    <a href={item.render_url} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-info underline">
+                      ver vídeo renderizado
+                    </a>
+                  )}
+                  {item.publish_permalink && (
+                    <a href={item.publish_permalink} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-good underline">
+                      ver post publicado
+                    </a>
+                  )}
+                  {(item.caption_error || item.render_error || item.publish_error) && (
+                    <p className="mt-1 text-xs text-critical">
+                      erro: {item.caption_error ?? item.render_error ?? item.publish_error}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
