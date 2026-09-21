@@ -15,38 +15,31 @@ export const redisConnection = new IORedis(process.env.REDIS_URL as string, {
   // em "recebido", com a Server Action travada em "Enviando..." por mais de
   // 2 minutos (às vezes indefinidamente), sem NENHUM erro no cliente.
   //
-  // `commandTimeout` sozinho (tentativa #1) não resolveu: reproduzido de
-  // novo em produção mesmo depois de configurá-lo, ainda travado após 120s+.
-  // Motivo: `commandTimeout` só limita comandos que já foram ENVIADOS e
-  // estão esperando resposta — um comando emitido enquanto a conexão ainda
-  // não está pronta fica parado na "offline queue" do ioredis
-  // (`enableOfflineQueue`, true por padrão) esperando a conexão ficar
-  // pronta, e isso NÃO é coberto por `commandTimeout`. Se o handshake
-  // TCP/TLS para o Upstash nunca completa (ou completa e cai silenciosamente
-  // depois, comum em runtime serverless com reuso de instância — Vercel
-  // Fluid Compute — quando a rede/NAT derruba o socket sem avisar) e o
-  // `retryStrategy` padrão do ioredis tenta reconectar indefinidamente com
-  // backoff, o comando fica esperando para sempre, sem nenhum timeout
-  // aplicável.
+  // Causa raiz de verdade, achada só depois: o `REDIS_URL` configurado em
+  // produção na Vercel estava CORROMPIDO (faltava o prefixo `rediss://` e
+  // sobrava um `%22` no final, algo como `//default:...@host:6379%22` em vez
+  // de `rediss://default:...@host:6379`) — provavelmente colado com aspas
+  // literais na hora de configurar a env var. Isso fazia toda tentativa de
+  // conexão falhar com `EINVAL`. Corrigido direto na env var da Vercel.
   //
-  // Fix real: `enableOfflineQueue: false` foi cogitado mas descartado —
-  // combinado com `lazyConnect: true` ele rejeita até o PRIMEIRO comando
-  // (aquele que dispararia a conexão inicial), porque não há fila pra
-  // segurar o comando enquanto conecta. Testado e confirmado: quebra o
-  // caminho feliz inteiro. Em vez disso, mantemos a offline queue padrão
-  // (segura o comando durante a 1ª tentativa de conectar) mas com
-  // `retryStrategy` finito: depois de esgotar as tentativas, o ioredis
-  // desiste e rejeita os comandos pendentes com erro — em vez de tentar
-  // reconectar com backoff para sempre enquanto os comandos ficam
-  // acumulados na fila esperando uma conexão que nunca vem. Pior caso
-  // limitado a ~15-20s (connectTimeout × tentativas + backoff), o catch em
-  // app/dashboard/kanban/actions.ts trata o erro e devolve algo pro usuário
-  // rápido, e a reconciliação (lib/pipeline/reconcile.ts) cobre o
-  // reprocessamento automático depois. Nenhum comando de bloqueio roda
-  // nesta conexão (não há BullMQ Worker no projeto — só Queue.add/getJobs
-  // via o padrão cron-drain, ver lib/queue/drain.ts), então
-  // maxRetriesPerRequest também pode ser finito em vez de null (exigência
-  // do BullMQ é só para conexões usadas por Worker).
+  // Por que isso travava para sempre em vez de dar erro na hora: sem os
+  // timeouts abaixo, um comando emitido enquanto a conexão ainda não está
+  // pronta fica parado na "offline queue" do ioredis esperando a conexão
+  // ficar pronta — e com `retryStrategy` padrão (sem teto, backoff
+  // indefinido), o ioredis tentava reconectar pra sempre contra uma URL que
+  // nunca ia funcionar, então o comando nunca era liberado nem para falhar.
+  // `commandTimeout` sozinho (1ª tentativa) não bastou porque só limita
+  // comandos já ENVIADOS esperando resposta, não os presos na offline queue.
+  //
+  // Os timeouts abaixo continuam valendo mesmo com a env var corrigida: são
+  // uma defesa de verdade contra qualquer futuro problema de conectividade
+  // (rede, Upstash fora do ar, etc.) — sem eles, qualquer coisa desse tipo
+  // volta a travar a UI por minutos em vez de falhar rápido e deixar a
+  // reconciliação (lib/pipeline/reconcile.ts) reprocessar depois. Nenhum
+  // comando de bloqueio roda nesta conexão (não há BullMQ Worker no
+  // projeto — só Queue.add/getJobs via o padrão cron-drain, ver
+  // lib/queue/drain.ts), então maxRetriesPerRequest pode ser finito em vez
+  // de null (exigência do BullMQ é só para conexões usadas por Worker).
   connectTimeout: 5_000,
   commandTimeout: 8_000,
   maxRetriesPerRequest: 1,
