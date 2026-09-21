@@ -1,8 +1,15 @@
 export interface CaptionPromptContext {
   title: string | null;
   author: string | null;
-  origin: "drive" | "telegram";
+  origin: "drive" | "telegram" | "n8n" | "manual";
 }
+
+const ORIGIN_LABELS: Record<CaptionPromptContext["origin"], string> = {
+  drive: "Google Drive",
+  telegram: "Telegram",
+  n8n: "automação externa (n8n)",
+  manual: "upload manual da equipe",
+};
 
 const SYSTEM_PROMPT = `Você é o gerador de manchete e legenda da Puzzle Records, uma página de fofoca musical no estilo Choquei/Léo Dias.
 
@@ -15,7 +22,7 @@ Regras obrigatórias:
 
 export function buildCaptionUserPrompt(context: CaptionPromptContext): string {
   const parts = [
-    `Origem do material: ${context.origin === "drive" ? "Google Drive" : "Telegram"}.`,
+    `Origem do material: ${ORIGIN_LABELS[context.origin]}.`,
     context.title
       ? `Título/legenda original enviada: "${context.title}".`
       : "Nenhum título ou gancho foi enviado junto com o material.",

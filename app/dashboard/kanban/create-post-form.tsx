@@ -17,19 +17,17 @@ export function CreatePostForm() {
       className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3"
     >
       <div className="space-y-1">
-        <Label htmlFor="title">Manchete / título</Label>
-        <Input id="title" name="title" placeholder="ex.: Show da Fresno em SP" required className="w-64" />
-      </div>
-      <div className="space-y-1">
-        <Label htmlFor="mediaUrl">URL pública da foto/vídeo (https)</Label>
-        <Input id="mediaUrl" name="mediaUrl" placeholder="https://..." required className="w-80" />
+        <Label htmlFor="file">Vídeo ou foto</Label>
+        <Input id="file" name="file" type="file" accept="video/*,image/*" required className="w-72" />
       </div>
       <Button type="submit" disabled={isPending}>
-        {isPending ? "Criando..." : "Criar post"}
+        {isPending ? "Enviando..." : "Criar post"}
       </Button>
       {state.error && <p className="w-full text-sm text-destructive">{state.error}</p>}
       {state.success && (
-        <p className="w-full text-sm text-good">Item criado em &quot;recebido&quot; e enfileirado para gerar legenda.</p>
+        <p className="w-full text-sm text-good">
+          Item criado em &quot;recebido&quot; — a IA vai gerar manchete e legenda automaticamente.
+        </p>
       )}
     </form>
   );

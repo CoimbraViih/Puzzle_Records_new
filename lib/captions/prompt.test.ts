@@ -15,6 +15,13 @@ describe("buildCaptionUserPrompt", () => {
     expect(prompt).toContain("Autor do envio não identificado");
     expect(prompt).toContain("Google Drive");
   });
+
+  it("rotula corretamente origem n8n e manual (upload direto no Kanban)", () => {
+    expect(buildCaptionUserPrompt({ title: null, author: null, origin: "n8n" })).toContain("automação externa (n8n)");
+    expect(buildCaptionUserPrompt({ title: null, author: "editor@puzzlerecords.com", origin: "manual" })).toContain(
+      "upload manual da equipe",
+    );
+  });
 });
 
 describe("buildCaptionMessages", () => {
