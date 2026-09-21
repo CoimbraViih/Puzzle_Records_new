@@ -1,4 +1,4 @@
-import { getPipelineItemsGroupedByStatus, PIPELINE_STATUSES } from "@/lib/ingestion/pipeline-items";
+import { getPipelineItemsGroupedByStatus, PIPELINE_STATUSES, progressPercentFor } from "@/lib/ingestion/pipeline-items";
 import { CreatePostForm } from "./create-post-form";
 
 export const dynamic = "force-dynamic";
@@ -49,12 +49,24 @@ export default async function KanbanPage() {
               {grouped[status].length === 0 && (
                 <p className="text-xs text-muted-foreground">Nenhum item.</p>
               )}
-              {grouped[status].map((item) => (
+              {grouped[status].map((item) => {
+                const progress = progressPercentFor(item.status);
+                const hasError = Boolean(item.caption_error || item.render_error || item.publish_error);
+                return (
                 <div key={item.id} className="rounded-md border border-border bg-card p-2 text-sm shadow-xs">
                   <p className="font-medium">{item.caption_headline ?? item.title ?? "(sem título)"}</p>
                   <p className="text-xs text-muted-foreground">
                     {ORIGIN_LABELS[item.origin] ?? item.origin} · {item.author ?? "autor desconhecido"}
                   </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-bg">
+                      <div
+                        className={`h-full rounded-full transition-[width] ${hasError ? "bg-critical" : "bg-brand"}`}
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                    <span className="font-mono text-[10px] text-muted-foreground">{progress}%</span>
+                  </div>
                   {item.render_url && (
                     <a href={item.render_url} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-info underline">
                       ver vídeo renderizado
@@ -71,7 +83,8 @@ export default async function KanbanPage() {
                     </p>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}

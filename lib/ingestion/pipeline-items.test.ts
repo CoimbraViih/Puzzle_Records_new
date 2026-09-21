@@ -12,7 +12,7 @@ vi.mock("@supabase/supabase-js", () => ({
   }),
 }));
 
-import { buildPipelineItemPayload, upsertPipelineItem } from "./pipeline-items";
+import { buildPipelineItemPayload, upsertPipelineItem, progressPercentFor } from "./pipeline-items";
 
 describe("buildPipelineItemPayload", () => {
   it("monta o payload de um item vindo do Drive", () => {
@@ -110,5 +110,20 @@ describe("upsertPipelineItem", () => {
     });
 
     expect(result).toEqual({ id: "item-2", status: "recebido" });
+  });
+});
+
+describe("progressPercentFor", () => {
+  it("mapeia cada status para seu percentual na ordem do pipeline", () => {
+    expect(progressPercentFor("recebido")).toBe(0);
+    expect(progressPercentFor("legenda")).toBe(20);
+    expect(progressPercentFor("renderizando")).toBe(40);
+    expect(progressPercentFor("aguardando_aprovacao")).toBe(60);
+    expect(progressPercentFor("agendado")).toBe(80);
+    expect(progressPercentFor("publicado")).toBe(100);
+  });
+
+  it("retorna 0 para um status desconhecido em vez de lançar", () => {
+    expect(progressPercentFor("status-inexistente")).toBe(0);
   });
 });

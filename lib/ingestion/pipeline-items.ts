@@ -108,6 +108,18 @@ const PIPELINE_STATUSES = [
 ] as const;
 
 /**
+ * % de progresso de um item no pipeline, pela posição do seu status atual em
+ * PIPELINE_STATUSES (recebido=0% ... publicado=100%) — mesma fonte de
+ * verdade usada para agrupar as colunas do Kanban, então nunca dessincroniza
+ * se uma etapa for adicionada/removida do pipeline.
+ */
+export function progressPercentFor(status: string): number {
+  const index = PIPELINE_STATUSES.indexOf(status as (typeof PIPELINE_STATUSES)[number]);
+  if (index < 0) return 0;
+  return Math.round((index / (PIPELINE_STATUSES.length - 1)) * 100);
+}
+
+/**
  * Nota: esta função usa o client de service role para simplificar a Fase 1
  * (mesma factory já usada nos webhooks). Como a página já está atrás de
  * `proxy.ts` (só usuários autenticados com papel válido chegam em
