@@ -204,3 +204,16 @@ Live end-to-end QA do webhook do n8n contra o Supabase/Redis real ainda foi deli
 **Correção**: migration 3 aplicada diretamente via `apply_migration` do MCP do Supabase; colunas confirmadas presentes; query de leitura testada e funcionando.
 
 **Lição para não repetir**: registros anteriores neste arquivo de "migration aplicada, confirmado pelo usuário" nem sempre são confiáveis — o schema real deve ser conferido diretamente (`information_schema.columns` ou uma leitura de teste) antes de assumir que uma migration histórica realmente rodou, especialmente quando o projeto Supabase é compartilhado/reaproveitado de outro produto e não usa o fluxo de migrations do Supabase CLI.
+
+## Botão "Criar post" no Kanban — upload manual + 2 bugs reais de infra corrigidos (2026-09-20/21)
+
+**Feature**: `/dashboard/kanban` ganhou um formulário de upload direto (vídeo ou foto, sem título) — cria um `pipeline_item` com `origin: "manual"` e deixa a IA da OpenRouter gerar manchete e legenda sozinha (o prompt já tratava "sem título" produzindo uma manchete genérica de expectativa). Migration `00000000000005_add_manual_origin.sql` amplia o `check constraint` de `pipeline_items.origin`.
+
+**Dois bugs reais de infraestrutura encontrados e corrigidos**, reproduzidos rodando o app localmente com Playwright (upload de vídeo real, usuário de teste dedicado `qa-automatizado@puzzlerecords.local` criado via Supabase Admin API):
+
+1. **`proxy.ts` (middleware) tem limite de buffer PRÓPRIO, separado do `serverActions.bodySizeLimit`** — default 10MB (`experimental.proxyClientMaxBodySize`, nome novo desta versão do Next; a mensagem de aviso do próprio Next.js ainda cita o nome antigo `middlewareClientMaxBodySize`, desatualizado). Um vídeo real estourava esse teto antes mesmo de chegar no limite de Server Actions — o corpo era truncado nos primeiros 10MB, corrompendo o multipart e quebrando com `Unexpected end of form`. Corrigido em `next.config.ts` com `proxyClientMaxBodySize: "100mb"`.
+2. **Arquivo `"use server"` só pode exportar funções async** — `actions.ts` exportava `MAX_MEDIA_BYTES` (uma constante numérica) para o formulário validar o tamanho no navegador antes de enviar. Isso quebrava em runtime (`A "use server" file can only export async functions, found number`), não pego pelo `next build`. Movido para `app/dashboard/kanban/constants.ts`.
+
+**Descoberta adicional (não é bug, é limite de plataforma)**: o próprio projeto Supabase Storage recusa qualquer arquivo acima de **50MB** (`The object exceeded the maximum allowed size`), confirmado empiricamente subindo arquivos de teste direto via API — teto do plano do Supabase, não configurável por bucket nem pelo MCP. O limite do app (`MAX_MEDIA_BYTES`) foi ajustado de volta para 50MB para não deixar o usuário achar que arquivos maiores funcionam.
+
+**Validação end-to-end local**: upload de vídeo real (40MB) → item criado em "recebido" → fila drenada automaticamente (`PUBLIC_BASE_URL`/`CRON_SECRET` adicionados a `.env.local` para isso funcionar localmente) → IA gera manchete/legenda reais → item avança para "legenda". Dados de teste limpos do Supabase real ao final. Usuário de teste `qa-automatizado@puzzlerecords.local` (role `admin`) mantido no Supabase para reuso em testes automatizados futuros.
